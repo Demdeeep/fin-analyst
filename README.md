@@ -42,8 +42,6 @@ Other entry points:
 .venv/bin/python -m pytest --cov=financial_analyst --cov-report=term-missing
 ```
 
-348 tests, 96% coverage. The suite is layered deliberately:
-
 | Layer | File | What it proves |
 |---|---|---|
 | Hand-computed values | `test_calculations.py` | Each function matches a formula worked out on paper — never recomputed by the same code |
@@ -52,6 +50,7 @@ Other entry points:
 | Validation | `test_loaders.py` | Missing columns, duplicates and mixed currency are fatal; identity breaks are warnings |
 | Rule coverage | `test_anomalies.py` | Every rule both fires and stays silent; a new rule without a test fails the suite |
 | Property-based | `test_properties.py` | Arbitrary floats: every metric returns a finite float or `None` |
+| Real filings | `test_sanity_real_filings.py` | Definitions reproduce Apple's FY2022–24 10-K figures, including filed EPS |
 | Golden files | `test_stage1_pipeline.py`, `test_summary.py` | Output is byte-identical to a reviewed snapshot |
 
 Regenerate the golden files **only when the change is intended**, and read the
@@ -60,6 +59,26 @@ diff:
 ```bash
 .venv/bin/python -m pytest tests/ -q   # confirms the current mismatch
 ```
+
+## Known gaps
+
+Two, both recorded rather than hidden.
+
+**1. The pre-tax income identity is wrong for real companies.** We assume
+`pretax_income == operating_income - interest_expense`. Real filings include
+other non-operating income and expense, so this produces a `critical`
+`identity_mismatch` flag on otherwise clean data. The sanity check against
+Apple's 10-K found it; the fix is an `other_income` column. See
+`docs/stage1.md` for the residuals and `tests/test_sanity_real_filings.py`,
+which pins the current behaviour so the fix cannot be forgotten.
+
+**2. Sanity coverage is one company.** The ratio definitions are verified
+against Apple's FY2022–FY2024 filings — every margin, return, leverage and
+liquidity ratio matches, and computed EPS matches the filed EPS to the cent. A
+bank, a company with leases, or a business with a different revenue/interest
+tagging would each break a different assumption. The harness is
+`tests/test_sanity_real_filings.py`; adding a company means adding a CSV of its
+filed figures and the expectations a reader would check against.
 
 ## Layout
 

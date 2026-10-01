@@ -81,20 +81,82 @@ firing and a silent test, so adding a rule without covering it fails the suite.
 
 ## Sanity check against reality
 
-Unit tests prove the arithmetic matches its formula. Identity tests
-(ROE = margin × turnover × multiplier; assets = liabilities + equity) prove the
+Unit tests prove the arithmetic matches its formula. Identity tests prove the
 formulas agree with each other. Neither catches a formula that is *consistently*
-wrong.
+wrong. To check the definitions themselves, the pipeline was run over a real
+filing and the output compared with the figures a finance professional would
+quote.
 
-To check the definitions themselves, take one real filing, compute the ratios by
-hand for two or three metrics, and record the comparison in the table below.
-Until that is done, treat the definitions as reviewed-but-unverified against
-published figures.
+**Source:** Apple Inc., CIK 0000320193, annual figures from SEC EDGAR XBRL
+`companyfacts`, retrieved 2026-10-01. Accessions FY2022 `0000320193-24-000123`,
+FY2023/FY2024 `0000320193-25-000079`. Reproduced in
+`tests/fixtures/apple_fy2022_2024.csv` and pinned by
+`tests/test_sanity_real_filings.py` (22 tests).
 
-| Company | Metric | Our value | Published value | Source | Matches |
-|---|---|---|---|---|---|
-| _(to be filled in Stage 1 review)_ | | | | | |
+### FY2024 (year ended 2024-09-28), USD millions
 
-This is the one gap in the current test strategy: it needs a human with a filing
-in front of them, and it is the only thing standing between "the code is
-self-consistent" and "the code is right".
+| Metric | Ours | From the filing | Matches |
+|---|---|---|---|
+| Gross margin | 46.2% | 180,683 / 391,035 = 46.2% | ✅ |
+| Operating margin | 31.5% | 123,216 / 391,035 = 31.5% | ✅ |
+| Net margin | 24.0% | 93,736 / 391,035 = 24.0% | ✅ |
+| Return on equity | 164.6% | 93,736 / 56,950 = 164.6% | ✅ |
+| Return on assets | 25.7% | 93,736 / 364,980 = 25.7% | ✅ |
+| Debt / assets | 26.5% | 96,662 / 364,980 = 26.5% | ✅ |
+| Debt / equity | 1.70x | 96,662 / 56,950 = 1.70x | ✅ |
+| Current ratio | 0.87x | 152,987 / 176,392 = 0.87x | ✅ |
+| Free cash flow | $108,807M | 118,254 − 9,447 = 108,807 | ✅ |
+| **Diluted EPS** | **$6.08** | **$6.08 as filed** | ✅ |
+
+EPS is the strongest line in the table: Apple publishes it, we do not, so
+agreement validates both the EPS definition and the share-count scaling
+(millions of shares, not units) at once.
+
+The 164.6% ROE is correct and looks absurd. It is not a bug: Apple returns so
+much capital that equity is a small base, giving an equity multiplier of only
+6.4x. A tool that could not reproduce a surprising-but-right figure would not be
+worth trusting.
+
+### What real data found: one definition is wrong
+
+The identities that held on synthetic data **do not all hold on real filings.**
+
+| Identity | Synthetic sample | Apple FY2022 | Apple FY2023 |
+|---|---|---|---|
+| assets = liabilities + equity | ✅ | ✅ exact | ✅ exact |
+| gross profit = revenue − COGS | ✅ | ✅ exact | ✅ exact |
+| operating income = gross profit − opex | ✅ | ✅ exact | ✅ exact |
+| net income = pre-tax − tax | ✅ | ✅ exact | ✅ exact |
+| **pre-tax = operating income − interest** | ✅ | ❌ **+2,597** | ❌ **+3,368** |
+
+We assume the only item between EBIT and pre-tax income is interest expense.
+That is true of the synthetic sample, where I set other income to zero — and
+false of essentially every real company. Apple reports other non-operating
+income and expense, and the residual is exactly that line item.
+
+The correct identity is:
+
+```
+pretax_income == operating_income - interest_expense + other_income
+```
+
+**Consequence today:** on a real filing the loader warns, and the
+`identity_mismatch` rule fires **critical** — on two of three years — purely
+because the data is fine. A reader cannot distinguish that from a genuine
+accounting error.
+
+**Status: open.** The fix is a new `other_income` column plus the identity above
+in `calculations.income_statement_residuals`. The behaviour is pinned by
+`test_pretax_identity_does_not_hold_on_real_filings`, which fails the moment
+someone makes the change, so the finding cannot be forgotten. Until then, treat
+`pretax_income` mismatches as expected on real data and read the sign of the
+residual as the size of the unmodelled non-operating item.
+
+### Extending this
+
+Add a company by adding its annual 10-K figures to a CSV of the same shape and
+writing the expectations a reader would check against. One real company per
+industry shape is worth more than four synthetic ones. A business with leases, a
+financial with a different revenue/interest tagging, and a bank would each break
+a different assumption.
+
