@@ -14,6 +14,11 @@ venv/
 htmlcov/
 .hypothesis/
 
+# Generated reports: recreated on every run by
+#   python -m financial_analyst.stages.stage1_static_csv
+# The regression contract for these lives in tests/fixtures/, which is tracked.
+outputs/
+
 # Notebooks
 .ipynb_checkpoints/
 
