@@ -1,0 +1,40 @@
+[project]
+name = "fin-analyst"
+version = "0.1.0"
+description = "Multi-agent financial analyst - Stage 1: static CSV financial analysis"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "pandas==2.3.3",
+    "numpy==1.26.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "pytest-cov==6.0.0",
+    "hypothesis==6.122.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["financial_analyst"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["error::RuntimeWarning"]
+
+[tool.coverage.run]
+source = ["financial_analyst"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

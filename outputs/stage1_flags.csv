@@ -1,0 +1,28 @@
+ticker,fiscal_year,rule,severity,message,value
+INIT,2020,low_interest_coverage,critical,"operating income covers interest -0.84x, below the 1.0x threshold",-0.84
+INIT,2021,low_interest_coverage,critical,"operating income covers interest -2.01x, below the 1.0x threshold",-2.0148148148148146
+INIT,2022,low_interest_coverage,critical,"operating income covers interest -2.57x, below the 1.0x threshold",-2.5714285714285716
+INIT,2022,negative_equity,critical,shareholders' equity is -20.0; ROE and debt-to-equity are undefined this year,-20.0
+INIT,2023,low_interest_coverage,critical,"operating income covers interest -1.17x, below the 1.0x threshold",-1.169230769230769
+INIT,2024,low_interest_coverage,critical,"operating income covers interest 0.36x, below the 1.0x threshold",0.35833333333333334
+GLOB,2021,fcf_negative,warning,"free cash flow -10.0, the 2nd consecutive negative year",-10.0
+GLOB,2023,missing_fiscal_year,warning,FY2023 has no row between this company's first and last reported year,
+INIT,2020,high_debt_to_equity,warning,"debt/equity 3.22x, above the 2.0x threshold",3.2222222222222223
+INIT,2020,high_net_debt_to_ebitda,warning,"net debt/EBITDA 25.56x, above the 4.0x threshold",25.555555555555557
+INIT,2021,ebitda_margin_collapse,warning,EBITDA margin fell 9.6pp year over year,-9.588235294117647
+INIT,2021,fcf_negative,warning,"free cash flow -23.0, the 2nd consecutive negative year",-23.0
+INIT,2021,high_debt_to_equity,warning,"debt/equity 7.25x, above the 2.0x threshold",7.25
+INIT,2021,margin_compression,warning,net margin fell 8.6pp year over year,-8.607843137254905
+INIT,2021,negative_working_capital,warning,working capital -23.0,-23.0
+INIT,2022,ebitda_margin_collapse,warning,EBITDA margin fell 7.4pp year over year,-7.411764705882355
+INIT,2022,fcf_negative,warning,"free cash flow -47.0, the 3rd consecutive negative year",-47.0
+INIT,2022,margin_compression,warning,net margin fell 9.4pp year over year,-9.392156862745093
+INIT,2022,margin_compression,warning,gross margin fell 6.0pp year over year,-5.999999999999995
+INIT,2022,negative_working_capital,warning,working capital -49.0,-49.0
+INIT,2022,revenue_decline,warning,revenue fell 11.8% year over year,-0.11764705882352941
+INIT,2023,fcf_negative,warning,"free cash flow -20.0, the 4th consecutive negative year",-20.0
+INIT,2023,high_debt_to_equity,warning,"debt/equity 2.89x, above the 2.0x threshold",2.8947368421052633
+INIT,2023,high_net_debt_to_ebitda,warning,"net debt/EBITDA 51.09x, above the 4.0x threshold",51.08695652173913
+INIT,2023,negative_working_capital,warning,working capital -13.0,-13.0
+GLOB,,imputed_column,info,ebitda was blank in the source and has been derived,
+VCTR,,imputed_column,info,free_cash_flow was blank in the source and has been derived,
