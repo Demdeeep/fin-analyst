@@ -181,59 +181,53 @@ def test_revenue_decline_in_fy2023_is_detected(apple_metrics):
 
 
 # ---------------------------------------------------------------------------
-# A definition that real data breaks -- pinned deliberately
+# The identity that real data once broke -- now fixed
 # ---------------------------------------------------------------------------
-def test_pretax_identity_does_not_hold_on_real_filings(apple_frame):
-    """KNOWN LIMITATION. Our income-statement identity is wrong for real companies.
+def test_pretax_identity_holds_on_real_filings(apple_frame):
+    """The EBIT -> pre-tax bridge, using the line Apple actually reports.
 
-    We assume ``pretax_income == operating_income - interest_expense``. That
-    holds only when non-operating items other than interest are zero, which was
-    true of the synthetic sample and is false of essentially every real company.
+    This is the check that used to fail. We had assumed
+    ``pretax == operating_income - interest_expense``, which left residuals of
+    +2,597 (FY2022) and +3,368 (FY2023). The real bridge is the single net
+    non-operating line as a company presents it, interest included:
 
-    Apple reports other non-operating income and expense, so:
+        FY2022  119,437 + (-334) = 119,103
+        FY2023  114,301 + (-565) = 113,736
+        FY2024  123,216 + ( 269) = 123,485
 
-        FY2022  EBIT 119,437 - interest 2,931 = 116,506, but pretax is 119,103
-                -> residual +2,597, which is the other non-operating income
-        FY2023  EBIT 114,301 - interest 3,933 = 110,368, but pretax is 113,736
-                -> residual +3,368
-
-    The correct identity is::
-
-        pretax_income == operating_income - interest_expense + other_income
-
-    Until an ``other_income`` column exists, this makes the loader warn and the
-    ``identity_mismatch`` rule fire **critical** on every real filing with any
-    non-interest non-operating item. That is a false alarm, and a reader of the
-    report has no way to tell it from a genuine inconsistency.
-
-    This test pins the current behaviour on purpose. When someone adds the
-    column, it fails and points straight at the change. Delete it only once the
-    identity above has been corrected.
+    All three now balance exactly. See docs/stage1.md.
     """
-    for fiscal_year, residual in ((2022, 2597.0), (2023, 3368.0)):
+    expected_other_income = {2022: -334.0, 2023: -565.0, 2024: 269.0}
+    for fiscal_year, other_income in expected_other_income.items():
         row = apple_frame[apple_frame["fiscal_year"] == fiscal_year].iloc[0]
-        computed = calc.income_statement_residuals(row)
-        assert computed["pretax_income"] == pytest.approx(residual, abs=0.1)
-        # The other three identities are unaffected.
-        assert computed["gross_profit"] == pytest.approx(0.0, abs=0.1)
-        assert computed["operating_income"] == pytest.approx(0.0, abs=0.1)
-        assert computed["net_income"] == pytest.approx(0.0, abs=0.1)
+        assert row["other_income"] == pytest.approx(other_income, abs=0.1)
+        assert row["operating_income"] + row["other_income"] == pytest.approx(
+            row["pretax_income"], abs=0.1
+        )
+        residuals = calc.income_statement_residuals(row)
+        assert residuals["pretax_income"] == pytest.approx(0.0, abs=0.1)
+        # All four identities, every year.
+        for line, residual in residuals.items():
+            assert residual == pytest.approx(0.0, abs=0.1), line
 
 
-def test_the_false_alarm_actually_reaches_the_report(apple_metrics, apple_frame):
-    """Confirms the limitation is not merely theoretical."""
-    context = an.AnalysisContext(metrics=apple_metrics, source=apple_frame)
-    mismatches = an.identity_mismatch(context)
-    assert [flag.fiscal_year for flag in mismatches] == [2022, 2023]
-    assert all(flag.severity == "critical" for flag in mismatches)
-    assert all("pretax_income" in flag.message for flag in mismatches)
-
-
-def test_the_loader_warns_about_the_same_thing(apple_frame):
-    """The warning reaches the operator before any report is written."""
+def test_no_false_alarm_reaches_the_report(apple_metrics, apple_frame):
+    """The regression test for the bug: a clean filing must raise nothing."""
     dataset = load_financials(APPLE)
-    pretax_warnings = [w for w in dataset.warnings if "pretax_income" in w]
-    assert len(pretax_warnings) == 2
-    assert all("+2597" in w or "+3368" in w for w in pretax_warnings)
+    assert dataset.warnings == (), dataset.warnings
+    context = an.AnalysisContext(metrics=apple_metrics, source=apple_frame)
+    assert an.identity_mismatch(context) == []
+
+
+def test_the_old_assumption_is_not_silently_reinstated(apple_frame):
+    """Guards against someone 'simplifying' the identity back.
+
+    If ``other_income`` were defaulted to zero, this file would start producing
+    critical flags again -- quietly, and only on real data.
+    """
+    row = apple_frame[apple_frame["fiscal_year"] == 2022].iloc[0]
+    without_other_income = {k: v for k, v in row.items() if k != "other_income"}
+    residuals = calc.income_statement_residuals(without_other_income)
+    assert "pretax_income" not in residuals, "a missing bridge must not be guessed"
 
 

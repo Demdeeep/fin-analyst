@@ -117,40 +117,47 @@ much capital that equity is a small base, giving an equity multiplier of only
 6.4x. A tool that could not reproduce a surprising-but-right figure would not be
 worth trusting.
 
-### What real data found: one definition is wrong
+### What real data found: one definition was wrong — and is now fixed
 
-The identities that held on synthetic data **do not all hold on real filings.**
+The identities that held on synthetic data **did not all hold on real filings.**
 
-| Identity | Synthetic sample | Apple FY2022 | Apple FY2023 |
+| Identity | Synthetic sample | Apple FY2022 | Apple FY2023 | Now |
+|---|---|---|---|---|
+| assets = liabilities + equity | ✅ | ✅ exact | ✅ exact | ✅ |
+| gross profit = revenue − COGS | ✅ | ✅ exact | ✅ exact | ✅ |
+| operating income = gross profit − opex | ✅ | ✅ exact | ✅ exact | ✅ |
+| net income = pre-tax − tax | ✅ | ✅ exact | ✅ exact | ✅ |
+| **pre-tax = operating income − interest** | ✅ | ❌ **+2,597** | ❌ **+3,368** | **fixed** |
+
+We assumed the only item between EBIT and pre-tax income is interest expense.
+That was true of the synthetic sample, where I set other income to zero — and
+false of essentially every real company. The residual was exactly Apple's other
+non-operating income.
+
+**The fix.** Model the line the way companies actually present it: a single net
+non-operating figure with interest already inside it.
+
+```
+pretax_income == operating_income + other_income
+```
+
+| | EBIT | Other income/(expense), net | = filed pre-tax |
 |---|---|---|---|
-| assets = liabilities + equity | ✅ | ✅ exact | ✅ exact |
-| gross profit = revenue − COGS | ✅ | ✅ exact | ✅ exact |
-| operating income = gross profit − opex | ✅ | ✅ exact | ✅ exact |
-| net income = pre-tax − tax | ✅ | ✅ exact | ✅ exact |
-| **pre-tax = operating income − interest** | ✅ | ❌ **+2,597** | ❌ **+3,368** |
+| FY2022 | 119,437 | −334 | **119,103** ✅ |
+| FY2023 | 114,301 | −565 | **113,736** ✅ |
+| FY2024 | 123,216 | +269 | **123,485** ✅ |
 
-We assume the only item between EBIT and pre-tax income is interest expense.
-That is true of the synthetic sample, where I set other income to zero — and
-false of essentially every real company. Apple reports other non-operating
-income and expense, and the residual is exactly that line item.
+All three balance exactly, and the loader and the `identity_mismatch` rule are
+now silent on Apple's filings.
 
-The correct identity is:
+`interest_expense` is kept for `interest_coverage` only — it is **not**
+subtracted in the bridge as well, since that would double-count it. And a
+missing `other_income` leaves the bridge genuinely unknown, so the pre-tax check
+is skipped rather than defaulted to zero; defaulting would have reinstated the
+same error, silently, and only on real data.
 
-```
-pretax_income == operating_income - interest_expense + other_income
-```
-
-**Consequence today:** on a real filing the loader warns, and the
-`identity_mismatch` rule fires **critical** — on two of three years — purely
-because the data is fine. A reader cannot distinguish that from a genuine
-accounting error.
-
-**Status: open.** The fix is a new `other_income` column plus the identity above
-in `calculations.income_statement_residuals`. The behaviour is pinned by
-`test_pretax_identity_does_not_hold_on_real_filings`, which fails the moment
-someone makes the change, so the finding cannot be forgotten. Until then, treat
-`pretax_income` mismatches as expected on real data and read the sign of the
-residual as the size of the unmodelled non-operating item.
+Guarded by `test_no_false_alarm_reaches_the_report`, and against regression by
+`test_the_old_assumption_is_not_silently_reinstated`.
 
 ### Extending this
 

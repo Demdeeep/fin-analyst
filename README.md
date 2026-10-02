@@ -60,25 +60,19 @@ diff:
 .venv/bin/python -m pytest tests/ -q   # confirms the current mismatch
 ```
 
-## Known gaps
+## Known gap
 
-Two, both recorded rather than hidden.
-
-**1. The pre-tax income identity is wrong for real companies.** We assume
-`pretax_income == operating_income - interest_expense`. Real filings include
-other non-operating income and expense, so this produces a `critical`
-`identity_mismatch` flag on otherwise clean data. The sanity check against
-Apple's 10-K found it; the fix is an `other_income` column. See
-`docs/stage1.md` for the residuals and `tests/test_sanity_real_filings.py`,
-which pins the current behaviour so the fix cannot be forgotten.
-
-**2. Sanity coverage is one company.** The ratio definitions are verified
-against Apple's FY2022–FY2024 filings — every margin, return, leverage and
-liquidity ratio matches, and computed EPS matches the filed EPS to the cent. A
-bank, a company with leases, or a business with a different revenue/interest
-tagging would each break a different assumption. The harness is
+Sanity coverage is **one company**. The ratio definitions are verified against
+Apple's FY2022–FY2024 filings — every margin, return, leverage and liquidity
+ratio matches, and computed EPS matches the filed EPS to the cent. A bank, a
+company with leases, or a business that tags revenue or interest differently
+would each break a different assumption. The harness is
 `tests/test_sanity_real_filings.py`; adding a company means adding a CSV of its
 filed figures and the expectations a reader would check against.
+
+That check already earned its place once: it caught a wrong income-statement
+bridge (`pretax = operating income − interest`) that every synthetic test
+agreed with. See `docs/stage1.md`.
 
 ## Layout
 

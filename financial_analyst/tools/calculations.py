@@ -592,11 +592,25 @@ def income_statement_residuals(lines: Mapping[str, object]) -> dict[str, Optiona
     dataframe, or a plain dict). Each returned value is ``reported - expected``:
     ``gross_profit`` is checked against ``revenue - cogs``, ``operating_income``
     against ``gross_profit - operating_expenses``, ``pretax_income`` against
-    ``operating_income - interest_expense``, and ``net_income`` against
+    ``operating_income + other_income``, and ``net_income`` against
     ``pretax_income - tax_expense``.
 
     A check whose inputs are incomplete yields ``None``, meaning "not checked",
     which is deliberately distinct from ``0.0`` ("checked and consistent").
+
+    Note ``other_income``: it is the *net* non-operating line exactly as a
+    company presents it between operating income and pre-tax income, so it
+    already contains interest expense. ``pretax == operating_income -
+    interest_expense`` was the earlier assumption here, and it is wrong for
+    effectively every real company -- it survives only on data whose non-
+    operating items other than interest are zero. Sanity-checking against
+    Apple's 10-K is what exposed it: FY2022 filed pre-tax income is 119,103
+    against 119,437 - 2,931 = 116,506 computed, a residual of 2,597 which is
+    precisely Apple's other non-operating income. With the net line, FY2022,
+    FY2023 and FY2024 all balance exactly.
+
+    Because a missing ``other_income`` leaves the bridge genuinely unknown, the
+    pre-tax check is skipped rather than assumed to be zero.
     """
     residuals: dict[str, Optional[float]] = {}
 
@@ -605,7 +619,7 @@ def income_statement_residuals(lines: Mapping[str, object]) -> dict[str, Optiona
     gross_profit = _num(lines.get("gross_profit"))
     operating_expenses = _num(lines.get("operating_expenses"))
     operating_income = _num(lines.get("operating_income"))
-    interest_expense = _num(lines.get("interest_expense"))
+    other_income = _num(lines.get("other_income"))
     pretax_income = _num(lines.get("pretax_income"))
     tax_expense = _num(lines.get("tax_expense"))
     net_income = _num(lines.get("net_income"))
@@ -616,9 +630,9 @@ def income_statement_residuals(lines: Mapping[str, object]) -> dict[str, Optiona
         residuals["operating_income"] = operating_income - (  # type: ignore[operator]
             gross_profit - operating_expenses
         )
-    if None not in (operating_income, interest_expense, pretax_income):
+    if None not in (operating_income, other_income, pretax_income):
         residuals["pretax_income"] = pretax_income - (  # type: ignore[operator]
-            operating_income - interest_expense
+            operating_income + other_income
         )
     if None not in (pretax_income, tax_expense, net_income):
         residuals["net_income"] = net_income - (pretax_income - tax_expense)  # type: ignore[operator]

@@ -404,7 +404,7 @@ def test_income_statement_residuals_all_zero_when_consistent():
     residuals = calc.income_statement_residuals({
         "revenue": 1000, "cogs": 600, "gross_profit": 400,
         "operating_expenses": 300, "operating_income": 100,
-        "interest_expense": 10, "pretax_income": 90,
+        "other_income": -10, "pretax_income": 90,
         "tax_expense": 20, "net_income": 70,
     })
     assert residuals == {
@@ -417,11 +417,28 @@ def test_income_statement_residuals_catch_a_wrong_figure():
     residuals = calc.income_statement_residuals({
         "revenue": 1000, "cogs": 600, "gross_profit": 450,   # should be 400
         "operating_expenses": 300, "operating_income": 100,
-        "interest_expense": 10, "pretax_income": 90,
+        "other_income": -10, "pretax_income": 90,
         "tax_expense": 20, "net_income": 70,
     })
     assert residuals["gross_profit"] == pytest.approx(50.0)
     assert residuals["operating_income"] == pytest.approx(-50.0)
+
+
+def test_pretax_residual_is_skipped_without_other_income():
+    """A missing non-operating line leaves the bridge unknown, so do not guess.
+
+    The old assumption -- that pre-tax is operating income less interest --
+    looked checkable and was wrong for every real company. Defaulting
+    ``other_income`` to zero would reinstate that error silently.
+    """
+    residuals = calc.income_statement_residuals({
+        "revenue": 1000, "cogs": 600, "gross_profit": 400,
+        "operating_expenses": 300, "operating_income": 100,
+        "interest_expense": 10, "pretax_income": 90,   # no other_income
+        "tax_expense": 20, "net_income": 70,
+    })
+    assert "pretax_income" not in residuals
+    assert residuals["net_income"] == pytest.approx(0.0)
 
 
 def test_incomplete_lines_are_skipped_not_failed():

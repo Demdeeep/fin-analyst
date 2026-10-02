@@ -36,7 +36,8 @@ def make_row(**overrides) -> dict:
         "fiscal_year": 2020, "period_end": "2020-12-31", "currency": "USD",
         "revenue": 1000.0, "cogs": 600.0, "gross_profit": 400.0,
         "operating_expenses": 300.0, "operating_income": 100.0,
-        "interest_expense": 10.0, "pretax_income": 90.0, "tax_expense": 20.0,
+        "interest_expense": 10.0, "other_income": -10.0,
+        "pretax_income": 90.0, "tax_expense": 20.0,
         "net_income": 70.0, "ebitda": 130.0, "depreciation_amortization": 30.0,
         "diluted_shares": 100.0,
         "cash_and_equivalents": 100.0, "accounts_receivable": 80.0, "inventory": 100.0,
@@ -61,7 +62,8 @@ def scale(row: dict, factor: float, **overrides) -> dict:
     """
     money_fields = (
         "revenue", "cogs", "gross_profit", "operating_expenses", "operating_income",
-        "interest_expense", "pretax_income", "tax_expense", "net_income", "ebitda",
+        "interest_expense", "other_income", "pretax_income", "tax_expense",
+        "net_income", "ebitda",
         "depreciation_amortization", "cash_and_equivalents", "accounts_receivable",
         "inventory", "total_current_assets", "total_assets", "accounts_payable",
         "short_term_debt", "total_current_liabilities", "long_term_debt",
