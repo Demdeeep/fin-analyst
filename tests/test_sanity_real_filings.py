@@ -231,3 +231,179 @@ def test_the_old_assumption_is_not_silently_reinstated(apple_frame):
     assert "pretax_income" not in residuals, "a missing bridge must not be guessed"
 
 
+# ===========================================================================
+# Second industry shape: a loss-making consumer company
+# ===========================================================================
+#
+# Source: Beyond Meat Inc., CIK 0001655210, annual figures from SEC EDGAR XBRL
+# companyfacts, retrieved 2026-10-01, in tests/fixtures/beyond_meat_fy2022_2024.csv.
+#
+# Why this company: Apple exercises none of the negative-value guards, because
+# Apple is profitable and solvent. Every one of those guards had only ever been
+# tested against synthetic data until this file existed. Beyond Meat has negative
+# equity in all three years, negative gross profit in two, operating and net
+# losses throughout, and negative cash from operations throughout.
+
+BEYOND_MEAT = "tests/fixtures/beyond_meat_fy2022_2024.csv"
+
+#: Diluted EPS as filed, from the EarningsPerShareDiluted tag.
+FILED_EPS_BEYOND = {2022: -5.75, 2023: -5.26, 2024: -2.43}
+
+
+@pytest.fixture(scope="module")
+def bynd_frame():
+    return load_financials(BEYOND_MEAT).frame
+
+
+@pytest.fixture(scope="module")
+def bynd_metrics(bynd_frame):
+    return compute_metric_frame(bynd_frame)
+
+
+def bynd_row(metrics, fiscal_year):
+    return metrics[metrics["fiscal_year"] == fiscal_year].iloc[0]
+
+
+# ---------------------------------------------------------------------------
+# The guards, exercised by real filed data
+# ---------------------------------------------------------------------------
+def test_negative_equity_is_real_in_the_filing(bynd_frame):
+    equity = dict(zip(bynd_frame["fiscal_year"], bynd_frame["total_equity"]))
+    assert equity == pytest.approx(
+        {2022: -203.548, 2023: -513.368, 2024: -601.208}, abs=0.01
+    )
+    assert all(value < 0 for value in equity.values())
+
+
+def test_negative_equity_suppresses_the_ratios_that_need_it(bynd_metrics):
+    """The headline guard, now proven against a real balance sheet."""
+    for row in bynd_metrics.to_dict("records"):
+        assert row["total_equity"] < 0
+        for column in ("return_on_equity", "debt_to_equity", "equity_multiplier",
+                       "price_to_book"):
+            assert pd.isna(row[column]), f"{column} should be undefined"
+
+
+def test_negative_ebitda_suppresses_net_debt_to_ebitda(bynd_metrics):
+    for row in bynd_metrics.to_dict("records"):
+        assert row["ebitda"] < 0
+        assert pd.isna(row["net_debt_to_ebitda"])
+        assert pd.isna(row["ev_to_ebitda"])
+
+
+def test_net_losses_suppress_valuation_and_conversion_ratios(bynd_metrics):
+    for row in bynd_metrics.to_dict("records"):
+        assert row["net_income"] < 0
+        for column in ("price_to_earnings", "fcf_conversion", "cfo_to_net_income"):
+            assert pd.isna(row[column]), column
+
+
+def test_negative_gross_margin_is_reported_not_hidden(bynd_metrics):
+    """FY2022 and FY2023 sold below cost. That is a real, signed margin."""
+    margins = dict(zip(bynd_metrics["fiscal_year"], bynd_metrics["gross_margin"]))
+    assert margins[2022] == pytest.approx(-23.743 / 418.933, rel=1e-6)
+    assert margins[2023] < 0
+    assert margins[2024] > 0
+
+
+def test_eps_matches_the_loss_per_share_beyond_meat_filed(bynd_metrics):
+    """External anchor on the negative side, which is the easier one to get wrong."""
+    for fiscal_year, filed in FILED_EPS_BEYOND.items():
+        computed = bynd_row(bynd_metrics, fiscal_year)["earnings_per_share"]
+        assert computed == pytest.approx(filed, abs=0.005), fiscal_year
+
+
+def test_cash_burn_raises_the_fcf_rule_with_real_data(bynd_metrics, bynd_frame):
+    context = an.AnalysisContext(metrics=bynd_metrics, source=bynd_frame)
+    fcf_flags = an.fcf_negative(context)
+    # Three consecutive negative years, so the rule fires from the second on.
+    assert [flag.fiscal_year for flag in fcf_flags] == [2023, 2024]
+    for row in bynd_metrics.to_dict("records"):
+        assert row["free_cash_flow"] < 0
+
+
+def test_low_interest_coverage_fires_on_a_real_loss_maker(bynd_metrics, bynd_frame):
+    context = an.AnalysisContext(metrics=bynd_metrics, source=bynd_frame)
+    fired = {flag.rule for flag in an.run_anomalies(context)}
+    assert "low_interest_coverage" in fired
+
+
+# ---------------------------------------------------------------------------
+# Identities that hold, on a very different company
+# ---------------------------------------------------------------------------
+def test_core_identities_hold_on_a_second_company(bynd_frame):
+    """The pre-tax fix is validated a second time, on loss-making data.
+
+    Gross profit, operating income and pre-tax all reconcile to the cent here --
+    including a pre-tax income that is a *loss* bridged by a non-operating line,
+    which is precisely the case the ``interest_expense`` assumption got wrong.
+    """
+    for row in bynd_frame.to_dict("records"):
+        residuals = calc.income_statement_residuals(row)
+        assert residuals["gross_profit"] == pytest.approx(0.0, abs=0.01)
+        assert residuals["operating_income"] == pytest.approx(0.0, abs=0.01)
+        assert residuals["pretax_income"] == pytest.approx(0.0, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# KNOWN FINDINGS -- pinned, not fixed
+# ---------------------------------------------------------------------------
+def test_net_income_identity_breaks_on_minority_interest(bynd_frame):
+    """KNOWN GAP 1. ``net_income == pretax_income - tax_expense`` assumes there
+    is no noncontrolling interest.
+
+    Beyond Meat's tagged ``NetIncomeLoss`` is the loss *attributable to Beyond
+    Meat*, which sits below the post-tax total. The residual is the minority
+    interest::
+
+        FY2022  pretax -347.157 - tax 0.032 = -347.189, filed -366.137
+                -> residual -18.948
+        FY2023  pretax -334.237 - tax 0.005 = -334.242, filed -338.144
+                -> residual  -3.902
+        FY2024  pretax -160.231 + tax 0.026 = -160.205, filed -160.278
+                -> residual  -0.073
+
+    So ``identity_mismatch`` fires critical on clean data, exactly as the pre-tax
+    bug did one line higher. The fix is a ``minority_interest`` column and the
+    identity ``net_income == pretax_income - tax_expense - minority_interest``.
+
+    Pinned deliberately: it fails when the fix lands.
+    """
+    expected = {2022: -18.948, 2023: -3.902, 2024: -0.073}
+    for row in bynd_frame.to_dict("records"):
+        residual = calc.income_statement_residuals(row)["net_income"]
+        assert residual == pytest.approx(expected[row["fiscal_year"]], abs=0.01)
+
+
+def test_the_minority_interest_false_alarm_reaches_the_report(bynd_metrics, bynd_frame):
+    """Confirms the gap is not merely theoretical."""
+    context = an.AnalysisContext(metrics=bynd_metrics, source=bynd_frame)
+    mismatches = an.identity_mismatch(context)
+    assert sorted(flag.fiscal_year for flag in mismatches) == [2022, 2023, 2024]
+    assert all("net_income" in flag.message for flag in mismatches)
+    assert all(flag.severity == "critical" for flag in mismatches)
+
+
+def test_balance_sheet_is_skipped_rather_than_faked(bynd_frame):
+    """KNOWN GAP 2. ``assets == liabilities + equity`` does not hold here.
+
+    Beyond Meat does not tag ``Liabilities`` in its 10-K -- redeemable
+    noncontrolling interests sit in mezzanine equity, outside both totals -- so
+    the fixture leaves ``total_liabilities`` blank. The check must then be
+    *skipped*.
+
+    It very nearly was not. An earlier version substituted zero for the missing
+    figure and produced a residual of 1,265.8 -- the entire balance sheet -- as a
+    ``critical`` flag. That was a real bug, found by real data, now fixed in
+    ``balance_sheet_residual`` and covered by
+    ``test_balance_sheet_is_skipped_not_faked_when_a_side_is_missing``.
+    """
+    for row in bynd_frame.to_dict("records"):
+        assert pd.isna(row["total_liabilities"])
+        assert calc.balance_sheet_residual(
+            row["total_assets"], row["total_liabilities"], row["total_equity"]
+        ) is None
+
+
+
+

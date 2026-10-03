@@ -396,8 +396,22 @@ def test_balance_sheet_residual_and_is_balanced():
     assert not calc.is_balanced(1000, 400, 500)
     # Within tolerance still counts as balanced.
     assert calc.is_balanced(1000, 400, 599.995, tolerance=0.01)
-    # Too little data to judge is not the same as a failure.
-    assert calc.is_balanced(None, 400, 600)
+
+
+@pytest.mark.parametrize("missing", ["total_assets", "total_liabilities", "total_equity"])
+def test_balance_sheet_is_skipped_not_faked_when_a_side_is_missing(missing):
+    """An absent figure is "not checked", never silently read as zero.
+
+    Found by running the pipeline over Beyond Meat's 10-K, which does not tag
+    ``Liabilities``. Treating the gap as 0 produced a residual equal to the whole
+    balance sheet -- 1,265.8 -- and a ``critical`` flag on perfectly clean data.
+    """
+    inputs = {"total_assets": 1062.224, "total_liabilities": 1265.772,
+              "total_equity": -203.548}
+    inputs[missing] = None
+    assert calc.balance_sheet_residual(**inputs) is None
+    # And the boolean check must not claim failure either.
+    assert calc.is_balanced(**inputs)
 
 
 def test_income_statement_residuals_all_zero_when_consistent():

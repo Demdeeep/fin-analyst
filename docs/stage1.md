@@ -159,11 +159,70 @@ same error, silently, and only on real data.
 Guarded by `test_no_false_alarm_reaches_the_report`, and against regression by
 `test_the_old_assumption_is_not_silently_reinstated`.
 
-### Extending this
+## Second industry shape: a loss-making consumer company
 
-Add a company by adding its annual 10-K figures to a CSV of the same shape and
-writing the expectations a reader would check against. One real company per
-industry shape is worth more than four synthetic ones. A business with leases, a
-financial with a different revenue/interest tagging, and a bank would each break
-a different assumption.
+Apple is the easy case. It is profitable, solvent and unremarkable in sign, so it
+exercises **none** of the negative-value guards. Those had only ever been tested
+against synthetic data until a second real filing was added.
+
+**Source:** Beyond Meat Inc., CIK 0001655210, FY2022–FY2024, SEC EDGAR XBRL
+`companyfacts`, retrieved 2026-10-01, in
+`tests/fixtures/beyond_meat_fy2022_2024.csv`.
+
+| Property | FY2022 | FY2023 | FY2024 |
+|---|---|---|---|
+| Shareholders' equity | **−203.5** | **−513.4** | **−601.2** |
+| Gross profit | **−23.7** | **−82.7** | 41.7 |
+| Operating income | −342.8 | −341.9 | −156.1 |
+| Net income | −366.1 | −338.1 | −160.3 |
+| Cash from operations | −320.2 | −107.8 | −98.8 |
+| Diluted EPS (ours) | **−5.76** | **−5.26** | **−2.43** |
+| Diluted EPS (as filed) | −5.75 | −5.26 | −2.43 |
+
+**What this proves.** The guards now face a real balance sheet. Negative equity
+suppresses ROE, debt/equity, the equity multiplier and P/B; negative EBITDA
+suppresses net debt/EBITDA and EV/EBITDA; net losses suppress P/E, FCF
+conversion and CFO/net income — every one of them `n/a`, never a
+plausible-looking number. The `fcf_negative` and `low_interest_coverage` rules
+fire on real filings. Filed EPS matches again, this time on the negative side.
+
+It also **re-validated the pre-tax fix from the previous section**: gross
+profit, operating income and pre-tax all reconcile to **0.000** on a company
+that bears no resemblance to Apple, including pre-tax *losses* bridged by a
+non-operating line.
+
+### Two more gaps, pinned
+
+**1. `net_income == pretax_income − tax_expense` breaks on minority interests.**
+
+| | pretax − tax | filed net income | residual |
+|---|---|---|---|
+| FY2022 | −347.189 | −366.137 | **−18.948** |
+| FY2023 | −334.242 | −338.144 | **−3.902** |
+| FY2024 | −160.205 | −160.278 | **−0.073** |
+
+Beyond Meat's tagged `NetIncomeLoss` is the loss *attributable to Beyond Meat*,
+which sits below the post-tax total. The residual is exactly the noncontrolling
+interest. The identity needs a `minority_interest` column.
+
+**2. `assets == liabilities + equity` does not hold here.** Beyond Meat does not
+tag `Liabilities` at all — redeemable noncontrolling interests sit in mezzanine
+equity, outside both totals — so the fixture leaves `total_liabilities` blank
+and the check is *skipped*.
+
+This one nearly produced a **third false alarm**: the code substituted zero for
+the missing figure, yielding a residual of 1,265.8 — the entire balance sheet —
+as a `critical` flag on clean data. That was a real bug, and it contradicted the
+project's own rule that a missing value is "not checked", never a number. Fixed
+in `balance_sheet_residual` and covered by
+`test_balance_sheet_is_skipped_not_faked_when_a_side_is_missing`.
+
+### The pattern
+
+Three of the four identities that looked verified on Apple turned out to assume
+the simplest possible capital structure: no minority interests, no mezzanine
+equity, no non-interest non-operating items. **One happy-path company cannot
+validate a schema meant for messy ones** — it can only confirm the arithmetic.
+Two of the three findings are now fixed; the minority-interest gap is not.
+
 

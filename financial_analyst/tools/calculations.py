@@ -560,11 +560,21 @@ def ev_to_ebitda(enterprise_value_value: object, ebitda: object) -> Optional[flo
 def balance_sheet_residual(
     total_assets: object, total_liabilities: object, total_equity: object
 ) -> Optional[float]:
-    """``assets - (liabilities + equity)``. Zero when the balance sheet balances."""
+    """``assets - (liabilities + equity)``. Zero when the balance sheet balances.
+
+    Returns ``None`` when *any* of the three is missing. Substituting zero for an
+    absent figure is tempting and wrong: a company that does not tag
+    ``Liabilities`` (Beyond Meat does not -- its redeemable noncontrolling
+    interests sit in mezzanine equity) would otherwise report a residual equal to
+    the entire balance sheet and trip a ``critical`` identity flag on clean data.
+    An absent figure means "not checked", exactly as elsewhere in this module.
+    """
     assets = _num(total_assets)
-    if assets is None:
+    liabilities = _num(total_liabilities)
+    equity = _num(total_equity)
+    if assets is None or liabilities is None or equity is None:
         return None
-    return assets - (_num(total_liabilities) or 0.0) - (_num(total_equity) or 0.0)
+    return assets - (liabilities + equity)
 
 
 def is_balanced(
