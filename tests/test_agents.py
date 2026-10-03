@@ -1,0 +1,254 @@
+"""Tests for the Stage 2 foundations: providers, tool access and verification.
+
+Stage 2's safety story rests on three things, each tested here:
+
+1. The provider seam is one method, and a missing SDK or key degrades to a clear
+   error rather than an import crash.
+2. An agent can only cite values Stage 1 computed -- enforced in code, not asked
+   for in a prompt.
+3. Every figure in an agent's prose reconciles with Stage 1's numbers, and a
+   metric Stage 1 declined to compute cannot be quietly filled in.
+
+No API key is needed or used.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from financial_analyst.agents import verification
+from financial_analyst.agents.providers import build_client
+from financial_analyst.agents.providers.base import CompletionError, ProviderConfig
+from financial_analyst.agents.providers.stub import (
+    AlwaysSays,
+    ExplodingLLM,
+    ScriptedLLM,
+)
+from financial_analyst.agents.tools import (
+    CITEABLE_METRICS,
+    MetricStore,
+    ToolCatalogue,
+    execute,
+    parse_tool_request,
+)
+from financial_analyst.tools.metrics import METRIC_COLUMNS
+
+
+@pytest.fixture(scope="module")
+def store() -> MetricStore:
+    return MetricStore.from_json("outputs/stage1_metrics.json")
+
+
+@pytest.fixture(scope="module")
+def synthetic_store() -> MetricStore:
+    """A tiny store, so tests do not depend on the sample data's values.
+
+    Figures are ACME's, so hand-written prose can be checked against them:
+    revenue 1,750; CAGR 0.099; gross margin 0.44; ROE 0.091. LOSS stands in for a
+    loss-maker, where ROE and P/E are undefined.
+    """
+    return MetricStore(
+        data={
+            "TST": {
+                "2024": {
+                    "revenue": 1750.0, "revenue_cagr": 0.099, "gross_margin": 0.44,
+                    "net_margin": 0.108, "return_on_equity": 0.091,
+                    "interest_coverage": 8.5, "debt_to_assets": 0.136,
+                    "free_cash_flow": 170.0, "price_to_earnings": 41.48,
+                }
+            },
+            "LOSS": {
+                "2024": {
+                    "revenue": 430.0, "revenue_cagr": 0.094, "gross_margin": 0.40,
+                    "net_margin": -0.036, "return_on_equity": None,
+                    "interest_coverage": 0.36, "debt_to_assets": 0.419,
+                    "free_cash_flow": 0.0, "price_to_earnings": None,
+                }
+            },
+        },
+        tickers=("LOSS", "TST"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Provider seam
+# ---------------------------------------------------------------------------
+def test_scripted_client_replays_and_records():
+    client = ScriptedLLM(["first", "second"])
+    assert client.complete(system="s", user="u") == "first"
+    assert client.complete(system="s", user="u2") == "second"
+    assert client.call_count == 2
+    assert client.last_user() == "u2"
+    assert client.remaining == 0
+
+
+def test_scripted_client_falls_back_rather_than_raising():
+    """A miscounted script should look obviously wrong, not error like a bug."""
+    assert "no scripted reply" in ScriptedLLM([]).complete(system="s", user="u")
+
+
+def test_always_says_and_exploding():
+    client = AlwaysSays("same")
+    assert client.complete(system="s", user="u") == "same"
+    assert client.complete(system="s", user="u") == "same"
+    with pytest.raises(CompletionError):
+        ExplodingLLM("down").complete(system="s", user="u")
+
+
+def test_provider_config_never_exposes_the_key(monkeypatch):
+    monkeypatch.setenv("TEST_KEY", "  sk-secret  ")
+    config = ProviderConfig(api_key_env="TEST_KEY")
+    assert config.api_key == "sk-secret"
+    assert config.is_configured
+    # A blank key counts as absent rather than as an empty credential.
+    monkeypatch.setenv("TEST_KEY", "   ")
+    assert not config.is_configured
+
+
+def test_build_client_falls_back_to_stub_without_a_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert isinstance(build_client("auto"), ScriptedLLM)
+
+
+def test_unknown_provider_is_rejected():
+    with pytest.raises(ValueError, match="unknown provider"):
+        build_client("nope")
+
+
+def test_openai_adapter_reports_a_missing_sdk_or_key(monkeypatch):
+    """Import-guarded: the module loads with no SDK, and fails clearly.
+
+    Whichever guard trips first depends on whether ``openai`` is installed, so
+    the message must name one of the two real causes rather than a stack trace.
+    """
+    from financial_analyst.agents.providers.openai_client import OpenAIClient
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(CompletionError) as error:
+        OpenAIClient().complete(system="s", user="u")
+    message = str(error.value)
+    assert "openai" in message.lower()
+    assert "not set" in message or "not installed" in message
+    # The prompt must never appear in an error message.
+    assert "system" not in message and "user" not in message
+
+
+# ---------------------------------------------------------------------------
+# Tool access
+# ---------------------------------------------------------------------------
+def test_tool_request_parsing_stops_at_the_line_end():
+    """A ``\\s`` in that pattern swallowed every following line."""
+    text = "some prose\nTOOL: revenue_cagr, gross_margin\nmore prose"
+    assert parse_tool_request(text) == ("revenue_cagr", "gross_margin")
+
+
+def test_no_tool_request_is_a_valid_answer():
+    assert parse_tool_request("just prose") == ()
+    assert parse_tool_request("") == ()
+
+
+def test_tool_request_deduplicates():
+    assert parse_tool_request("TOOL: gross_margin, gross_margin") == ("gross_margin",)
+
+
+def test_citeable_metrics_are_stage1_columns_not_functions():
+    """`cagr` is a function; `revenue_cagr` is the column an agent cites."""
+    assert "revenue_cagr" in CITEABLE_METRICS
+    assert "free_cash_flow" in CITEABLE_METRICS
+    assert set(METRIC_COLUMNS) <= CITEABLE_METRICS
+
+
+def test_execute_reports_unknown_names_rather_than_raising(synthetic_store):
+    observation = execute(("gross_margin", "not_a_metric"), synthetic_store, "TST")
+    assert observation.unknown == ("not_a_metric",)
+    assert "gross_margin" in observation.values
+
+
+def test_execute_preserves_undefined_as_undefined(synthetic_store):
+    """The core invariant: `None` must reach the agent as undefined, not 0."""
+    observation = execute(
+        ("return_on_equity", "price_to_earnings"), synthetic_store, "LOSS"
+    )
+    assert observation.values == {}
+    assert set(observation.undefined) == {"return_on_equity", "price_to_earnings"}
+    assert "Do not estimate" in observation.render()
+
+
+def test_execute_renders_each_family_naturally(store):
+    rendered = execute(
+        ("revenue_cagr", "debt_to_assets", "interest_coverage",
+         "earnings_per_share", "revenue"),
+        store, "ACME",
+    ).values
+    assert rendered["revenue_cagr"] == "9.9%"
+    assert rendered["debt_to_assets"] == "13.6%"   # not 0.1358
+    assert rendered["interest_coverage"].endswith("x")
+    assert rendered["earnings_per_share"] == "0.96"
+    assert rendered["revenue"] == "$1,750M"
+
+
+def test_store_reports_what_stage1_declined(synthetic_store):
+    assert set(synthetic_store.undefined_metrics("LOSS", "2024")) == {
+        "return_on_equity", "price_to_earnings"
+    }
+    assert synthetic_store.undefined_metrics("TST", "2024") == ()
+
+
+def test_catalogue_renders_for_the_prompt():
+    text = ToolCatalogue.build().render()
+    assert "`gross_margin`" in text and "higher_is_better" in text
+
+
+# ---------------------------------------------------------------------------
+# Claim verification -- the component that makes agent prose trustworthy
+# ---------------------------------------------------------------------------
+def test_honest_prose_passes_verification(synthetic_store):
+    prose = (
+        "Revenue compounded at 9.9% to $1,750M. Gross margin is 44.0% and "
+        "interest coverage 8.5x."
+    )
+    assert verification.verify(prose, synthetic_store, "TST") == []
+
+
+def test_a_hallucinated_figure_is_caught(synthetic_store):
+    prose = "Revenue compounded at 12.0% while interest coverage was 3.2x."
+    kinds = {issue.kind for issue in verification.verify(prose, synthetic_store, "TST")}
+    assert "unverifiable_figure" in kinds
+
+
+def test_rounding_is_not_mistaken_for_fabrication(synthetic_store):
+    """0.099 rendered as 9.9% must reconcile; 12.0% must not."""
+    assert verification.verify("Growth was 9.9%.", synthetic_store, "TST") == []
+    issues = verification.verify("Growth was 12.0%.", synthetic_store, "TST")
+    assert len(issues) == 1
+
+
+def test_an_undefined_metric_cannot_be_numerified(synthetic_store):
+    prose = "It trades at a price to earnings of 4.2x."
+    kinds = {issue.kind for issue in verification.verify(prose, synthetic_store, "LOSS")}
+    assert "numerified_undefined" in kinds
+
+
+def test_correctly_declining_to_quote_passes(synthetic_store):
+    prose = "It has negative net income, so price to earnings is not meaningful."
+    assert verification.verify(prose, synthetic_store, "LOSS") == []
+
+
+def test_bare_integers_are_not_claims(synthetic_store):
+    """Years and list numbering would otherwise trigger false accusations."""
+    prose = "Over 5 years and 2 segments, the company was reviewed."
+    assert verification.extract_claims(prose) == []
+
+
+def test_verification_against_an_unknown_ticker_says_so(synthetic_store):
+    issues = verification.verify("Revenue grew 5.0%.", synthetic_store, "NOPE")
+    assert [issue.kind for issue in issues] == ["unverifiable_figure"]
+    assert "no Stage 1 metrics" in issues[0].detail
+
+
+def test_percentage_points_are_normalised_like_stage1(synthetic_store):
+    """pp figures become decimal fractions, matching how Stage 1 stores them."""
+    claims = verification.extract_claims("Margin rose 2.8pp.")
+    assert claims[0].kind == "points"
+    assert claims[0].value == pytest.approx(0.028)
+
