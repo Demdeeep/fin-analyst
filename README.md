@@ -42,7 +42,7 @@ Other entry points:
 .venv/bin/python -m pytest --cov=financial_analyst --cov-report=term-missing
 ```
 
-390 tests, 97% coverage. The suite is layered deliberately:
+404 tests, 97% coverage. The suite is layered deliberately:
 
 | Layer | File | What it proves |
 |---|---|---|
@@ -52,7 +52,7 @@ Other entry points:
 | Validation | `test_loaders.py` | Missing columns, duplicates and mixed currency are fatal; identity breaks are warnings |
 | Rule coverage | `test_anomalies.py` | Every rule both fires and stays silent; a new rule without a test fails the suite |
 | Property-based | `test_properties.py` | Arbitrary floats: every metric returns a finite float or `None` |
-| Real filings | `test_sanity_real_filings.py` | Definitions reproduce Apple's *and* Beyond Meat's 10-K figures, including filed EPS on both the positive and negative side |
+| Real filings | `test_sanity_real_filings.py` | Definitions reproduce three real 10-Ks — Apple, Beyond Meat and Target — including filed EPS on the positive and negative side |
 | Golden files | `test_stage1_pipeline.py`, `test_summary.py` | Output is byte-identical to a reviewed snapshot |
 
 Regenerate the golden files **only when the change is intended**, and read the
