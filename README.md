@@ -64,18 +64,20 @@ diff:
 
 ## Known gaps
 
-**1. `net_income == pretax_income − tax_expense` breaks on minority interests.**
-Beyond Meat's tagged net income is the loss *attributable to the parent*, below
-the post-tax total, so the identity fires `critical` on clean data. The fix is a
-`minority_interest` column. Pinned by
-`test_net_income_identity_breaks_on_minority_interest`.
+**All identity gaps found by the sanity checks are closed.** Verified against
+two real 10-Ks — Apple's and Beyond Meat's — with all four accounting
+identities reconciling on both, and computed EPS matching the filed EPS to the
+cent in each case. The checks are documented in `docs/stage1.md`, including the
+three wrong definitions those filings exposed and how each was fixed.
 
-**2. Two industry shapes, not three.** Verified against Apple's and Beyond Meat's
-filings: margins, returns, leverage and liquidity all reconcile, and computed EPS
-matches the filed EPS to the cent on both — including the negative side. A
-lease-heavy retailer and a bank would each break a different assumption, and for
-a bank the definitions arguably do not apply at all (interest is revenue). See
-`docs/stage1.md`.
+What is *not* yet covered is a third industry shape. A lease-heavy retailer
+would expose that our debt definition excludes operating leases, and a bank
+raises a design question rather than a bug: for a bank, interest is revenue, so
+`operating_income` and `net_margin` are not meaningful as defined — the tool
+would need to refuse rather than emit confident nonsense.
+
+Sanity coverage is still only two companies. That is enough to have caught three
+real defects, and nowhere near enough to claim the schema is general.
 
 ## Layout
 

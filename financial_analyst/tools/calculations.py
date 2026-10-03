@@ -175,9 +175,15 @@ def cagr(start: object, end: object, years: object) -> Optional[float]:
     if ratio < 0.0:
         return None
     try:
-        return ratio ** (1.0 / years_num) - 1.0
+        exponent = 1.0 / years_num
+        if not math.isfinite(exponent):
+            return None
+        result = ratio ** exponent - 1.0
     except (OverflowError, ValueError, ZeroDivisionError):
         return None
+    # A denormal ``years`` makes the exponent itself overflow to infinity, and
+    # ``ratio ** inf`` is inf rather than an exception. Declined, not returned.
+    return result if math.isfinite(result) else None
 
 
 def yoy_growth(values: Sequence[object]) -> list[Optional[float]]:
@@ -621,6 +627,18 @@ def income_statement_residuals(lines: Mapping[str, object]) -> dict[str, Optiona
 
     Because a missing ``other_income`` leaves the bridge genuinely unknown, the
     pre-tax check is skipped rather than assumed to be zero.
+
+    ``minority_interest`` works the same way. ``net_income`` is the parent's
+    share, which sits *below* the post-tax total when there are noncontrolling
+    interests::
+
+        net_income == pretax_income - tax_expense - minority_interest
+
+    Beyond Meat's 10-K exposed this: filed net loss is -366.137 against a
+    post-tax total of -347.189, a difference of 18.948 that is exactly the
+    minority interest. With the column present the identity is checkable; without
+    it the check is skipped, because a parent-only net income tells us nothing
+    about what sits below it.
     """
     residuals: dict[str, Optional[float]] = {}
 
@@ -632,6 +650,7 @@ def income_statement_residuals(lines: Mapping[str, object]) -> dict[str, Optiona
     other_income = _num(lines.get("other_income"))
     pretax_income = _num(lines.get("pretax_income"))
     tax_expense = _num(lines.get("tax_expense"))
+    minority_interest = _num(lines.get("minority_interest"))
     net_income = _num(lines.get("net_income"))
 
     if None not in (revenue, cogs, gross_profit):
@@ -644,8 +663,10 @@ def income_statement_residuals(lines: Mapping[str, object]) -> dict[str, Optiona
         residuals["pretax_income"] = pretax_income - (  # type: ignore[operator]
             operating_income + other_income
         )
-    if None not in (pretax_income, tax_expense, net_income):
-        residuals["net_income"] = net_income - (pretax_income - tax_expense)  # type: ignore[operator]
+    if None not in (pretax_income, tax_expense, minority_interest, net_income):
+        residuals["net_income"] = net_income - (  # type: ignore[operator]
+            pretax_income - tax_expense - minority_interest
+        )
 
     return residuals
 

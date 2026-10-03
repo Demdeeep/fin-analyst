@@ -348,40 +348,58 @@ def test_core_identities_hold_on_a_second_company(bynd_frame):
 # ---------------------------------------------------------------------------
 # KNOWN FINDINGS -- pinned, not fixed
 # ---------------------------------------------------------------------------
-def test_net_income_identity_breaks_on_minority_interest(bynd_frame):
-    """KNOWN GAP 1. ``net_income == pretax_income - tax_expense`` assumes there
-    is no noncontrolling interest.
+def test_net_income_identity_holds_once_minority_interest_is_modelled(bynd_frame):
+    """The fix. ``net_income`` is the *parent's* share, below the post-tax total.
 
-    Beyond Meat's tagged ``NetIncomeLoss`` is the loss *attributable to Beyond
-    Meat*, which sits below the post-tax total. The residual is the minority
-    interest::
+    Beyond Meat's tagged ``NetIncomeLoss`` sits under the post-tax figure, and
+    the gap is exactly the noncontrolling interest::
 
         FY2022  pretax -347.157 - tax 0.032 = -347.189, filed -366.137
-                -> residual -18.948
+                -> minority interest 18.948, and the identity now balances
         FY2023  pretax -334.237 - tax 0.005 = -334.242, filed -338.144
-                -> residual  -3.902
+                -> minority interest  3.902
         FY2024  pretax -160.231 + tax 0.026 = -160.205, filed -160.278
-                -> residual  -0.073
+                -> minority interest  0.073
 
-    So ``identity_mismatch`` fires critical on clean data, exactly as the pre-tax
-    bug did one line higher. The fix is a ``minority_interest`` column and the
-    identity ``net_income == pretax_income - tax_expense - minority_interest``.
-
-    Pinned deliberately: it fails when the fix lands.
+    Beyond Meat's 10-K tags no minority-interest figure of any kind -- the
+    ProfitLoss and both NCI tags are absent -- so the fixture's column is
+    *derived* from these residuals. That makes the identity a tautology here and
+    it proves nothing for this file; the evidence was the residual itself. The
+    column earns its place for the companies that do disclose it separately.
     """
-    expected = {2022: -18.948, 2023: -3.902, 2024: -0.073}
+    expected = {2022: 18.948, 2023: 3.902, 2024: 0.073}
     for row in bynd_frame.to_dict("records"):
-        residual = calc.income_statement_residuals(row)["net_income"]
-        assert residual == pytest.approx(expected[row["fiscal_year"]], abs=0.01)
+        assert row["minority_interest"] == pytest.approx(
+            expected[row["fiscal_year"]], abs=0.001
+        )
+        residuals = calc.income_statement_residuals(row)
+        assert residuals["net_income"] == pytest.approx(0.0, abs=0.01)
+        assert residuals["pretax_income"] == pytest.approx(0.0, abs=0.01)
 
 
-def test_the_minority_interest_false_alarm_reaches_the_report(bynd_metrics, bynd_frame):
-    """Confirms the gap is not merely theoretical."""
+def test_the_derived_minority_interest_is_exactly_the_old_residual(bynd_frame):
+    """Pins the numbers so the derivation cannot drift unnoticed."""
+    for row in bynd_frame.to_dict("records"):
+        post_tax = row["pretax_income"] - row["tax_expense"]
+        assert post_tax - row["net_income"] == pytest.approx(
+            row["minority_interest"], abs=0.01
+        )
+
+
+def test_no_false_alarm_remains_for_beyond_meat(bynd_metrics, bynd_frame):
+    """The regression test: clean filings must raise nothing at all."""
+    dataset = load_financials(BEYOND_MEAT)
+    assert dataset.warnings == (), dataset.warnings
     context = an.AnalysisContext(metrics=bynd_metrics, source=bynd_frame)
-    mismatches = an.identity_mismatch(context)
-    assert sorted(flag.fiscal_year for flag in mismatches) == [2022, 2023, 2024]
-    assert all("net_income" in flag.message for flag in mismatches)
-    assert all(flag.severity == "critical" for flag in mismatches)
+    assert an.identity_mismatch(context) == []
+
+
+def test_minority_interest_is_never_silently_defaulted(bynd_frame):
+    """Guards against 'simplifying' the check back to pretax minus tax."""
+    row = bynd_frame[bynd_frame["fiscal_year"] == 2022].iloc[0]
+    without = {k: v for k, v in row.items() if k != "minority_interest"}
+    residuals = calc.income_statement_residuals(without)
+    assert "net_income" not in residuals, "a missing bridge line must not be guessed"
 
 
 def test_balance_sheet_is_skipped_rather_than_faked(bynd_frame):

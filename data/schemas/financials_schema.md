@@ -60,7 +60,8 @@ row* (a signal) rather than a null column (silence).
 | `other_income` | float | ⭕ | **"Other income/(expense), net"** as the company presents it: the whole non-operating block, interest **included**. Signed |
 | `pretax_income` | float | ✅ | = operating income + other income |
 | `tax_expense` | float | ✅ | positive magnitude |
-| `net_income` | float | ✅ | signed |
+| `minority_interest` | float | ⭕ | Noncontrolling interest — the share of post-tax profit or loss that does **not** belong to the parent. Signed |
+| `net_income` | float | ✅ | signed. The **parent's** share: = pre-tax − tax − minority interest |
 | `ebitda` | float | ⭕ | derive: EBIT + D&A |
 | `depreciation_amortization` | float | ⭕ | |
 | `diluted_shares` | float | ✅ | millions → EPS in USD/share |
@@ -98,6 +99,30 @@ Two rules that follow:
   pre-tax check is skipped rather than assumed. Defaulting to zero would
   reinstate the original error silently, and it would fail only on real data —
   the worst possible place to discover it.
+
+### `minority_interest` — the other half of the same lesson
+
+`net_income` is the **parent's** share of the post-tax result, so it sits below
+the post-tax total whenever there are noncontrolling interests:
+
+```
+net_income == pretax_income - tax_expense - minority_interest
+```
+
+Beyond Meat exposed this too. Its FY2022 filed net loss is −366.137 against a
+post-tax total of −347.189 — a difference of 18.948, which is exactly the
+minority interest. The earlier `net_income == pretax_income − tax_expense`
+identity was true only for companies with no subsidiaries that anyone else owns
+a piece of, which is most of them *until you check a real filing*.
+
+Same rule as `other_income`: **a missing `minority_interest` means the net-income
+bridge is unknown, so the check is skipped**, not defaulted to zero.
+
+Beyond Meat's own 10-K tags no minority-interest figure at all — `ProfitLoss`
+and both NCI tags are absent — so in that fixture the column is *derived* from
+the residual and the identity is a tautology for that file. The evidence that
+the identity was wrong was the residual itself.
+
 
 ### Balance sheet
 
@@ -137,7 +162,7 @@ Two rules that follow:
 - `gross_profit == revenue - cogs`
 - `operating_income == gross_profit - operating_expenses`
 - `pretax_income == operating_income + other_income`
-- `net_income == pretax_income - tax_expense`
+- `net_income == pretax_income - tax_expense - minority_interest`
 - `free_cash_flow == cash_from_operations - capex`
 
 Each is verified against Apple's filed figures in `tests/test_sanity_real_filings.py`.

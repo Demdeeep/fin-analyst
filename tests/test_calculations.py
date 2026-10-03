@@ -107,6 +107,9 @@ def test_growth_rate(current, prior, expected):
         (100, 200, -1, None),
         (100, 200, None, None),
         (None, 200, 3, None),
+        # A denormal period makes 1/years overflow to inf, so ratio ** inf is
+        # inf rather than an exception. Found by hypothesis.
+        (0.5, 1.0, 2.225073858507e-311, None),
     ],
 )
 def test_cagr(start, end, years, expected):
@@ -419,7 +422,7 @@ def test_income_statement_residuals_all_zero_when_consistent():
         "revenue": 1000, "cogs": 600, "gross_profit": 400,
         "operating_expenses": 300, "operating_income": 100,
         "other_income": -10, "pretax_income": 90,
-        "tax_expense": 20, "net_income": 70,
+        "tax_expense": 20, "minority_interest": 0.0, "net_income": 70,
     })
     assert residuals == {
         "gross_profit": 0.0, "operating_income": 0.0,
@@ -427,32 +430,56 @@ def test_income_statement_residuals_all_zero_when_consistent():
     }
 
 
+def test_net_income_residual_excludes_the_minority_interest():
+    """net_income is the *parent's* share, below the post-tax total.
+
+    Beyond Meat exposed this: filed net loss -366.137 against a post-tax total of
+    -347.189, a difference of 18.948 that is exactly the minority interest.
+    """
+    residuals = calc.income_statement_residuals({
+        "revenue": 1000, "cogs": 600, "gross_profit": 400,
+        "operating_expenses": 300, "operating_income": 100,
+        "other_income": -10, "pretax_income": 90,
+        "tax_expense": 20, "minority_interest": 25, "net_income": 45,
+    })
+    assert residuals["net_income"] == pytest.approx(0.0)
+
+
 def test_income_statement_residuals_catch_a_wrong_figure():
     residuals = calc.income_statement_residuals({
         "revenue": 1000, "cogs": 600, "gross_profit": 450,   # should be 400
         "operating_expenses": 300, "operating_income": 100,
         "other_income": -10, "pretax_income": 90,
-        "tax_expense": 20, "net_income": 70,
+        "tax_expense": 20, "minority_interest": 0.0, "net_income": 70,
     })
     assert residuals["gross_profit"] == pytest.approx(50.0)
     assert residuals["operating_income"] == pytest.approx(-50.0)
 
 
-def test_pretax_residual_is_skipped_without_other_income():
-    """A missing non-operating line leaves the bridge unknown, so do not guess.
+@pytest.mark.parametrize("absent", ["other_income", "minority_interest"])
+def test_a_missing_bridge_line_skips_only_its_own_check(absent):
+    """A missing line means "not checked", never assumed to be zero.
 
-    The old assumption -- that pre-tax is operating income less interest --
-    looked checkable and was wrong for every real company. Defaulting
-    ``other_income`` to zero would reinstate that error silently.
+    Defaulting either to zero would reinstate a real false alarm -- and both
+    were found by running the pipeline over actual 10-K filings, where they
+    would fail only on real data.
     """
-    residuals = calc.income_statement_residuals({
+    lines = {
         "revenue": 1000, "cogs": 600, "gross_profit": 400,
         "operating_expenses": 300, "operating_income": 100,
-        "interest_expense": 10, "pretax_income": 90,   # no other_income
-        "tax_expense": 20, "net_income": 70,
-    })
-    assert "pretax_income" not in residuals
-    assert residuals["net_income"] == pytest.approx(0.0)
+        "other_income": -10, "pretax_income": 90,
+        "tax_expense": 20, "minority_interest": 0.0, "net_income": 70,
+    }
+    del lines[absent]
+    residuals = calc.income_statement_residuals(lines)
+    expected_missing = {"other_income": "pretax_income",
+                        "minority_interest": "net_income"}[absent]
+    assert expected_missing not in residuals
+    # The other lines are still checked.
+    assert residuals["gross_profit"] == pytest.approx(0.0)
+    assert residuals["operating_income"] == pytest.approx(0.0)
+    other = "net_income" if absent == "other_income" else "pretax_income"
+    assert residuals[other] == pytest.approx(0.0)
 
 
 def test_incomplete_lines_are_skipped_not_failed():

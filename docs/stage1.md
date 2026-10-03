@@ -191,11 +191,11 @@ profit, operating income and pre-tax all reconcile to **0.000** on a company
 that bears no resemblance to Apple, including pre-tax *losses* bridged by a
 non-operating line.
 
-### Two more gaps, pinned
+### Two more gaps — both now fixed
 
-**1. `net_income == pretax_income − tax_expense` breaks on minority interests.**
+**1. `net_income == pretax_income − tax_expense` broke on minority interests.**
 
-| | pretax − tax | filed net income | residual |
+| | pretax − tax | filed net income | gap |
 |---|---|---|---|
 | FY2022 | −347.189 | −366.137 | **−18.948** |
 | FY2023 | −334.242 | −338.144 | **−3.902** |
@@ -203,19 +203,28 @@ non-operating line.
 
 Beyond Meat's tagged `NetIncomeLoss` is the loss *attributable to Beyond Meat*,
 which sits below the post-tax total. The residual is exactly the noncontrolling
-interest. The identity needs a `minority_interest` column.
+interest, so the identity now reads
 
-**2. `assets == liabilities + equity` does not hold here.** Beyond Meat does not
+```
+net_income == pretax_income - tax_expense - minority_interest
+```
+
+**2. `assets == liabilities + equity` did not hold here.** Beyond Meat does not
 tag `Liabilities` at all — redeemable noncontrolling interests sit in mezzanine
 equity, outside both totals — so the fixture leaves `total_liabilities` blank
 and the check is *skipped*.
 
 This one nearly produced a **third false alarm**: the code substituted zero for
 the missing figure, yielding a residual of 1,265.8 — the entire balance sheet —
-as a `critical` flag on clean data. That was a real bug, and it contradicted the
-project's own rule that a missing value is "not checked", never a number. Fixed
-in `balance_sheet_residual` and covered by
+as a `critical` flag on clean data. That contradicted the project's own rule
+that a missing value is "not checked", never a number. Fixed in
+`balance_sheet_residual` and covered by
 `test_balance_sheet_is_skipped_not_faked_when_a_side_is_missing`.
+
+Beyond Meat's 10-K tags no minority-interest figure either, so that fixture's
+`minority_interest` is *derived* from the residual — which makes the net-income
+identity a tautology for that file. The column earns its keep for companies that
+disclose it separately, and the evidence here was the residual itself.
 
 ### The pattern
 
@@ -223,6 +232,6 @@ Three of the four identities that looked verified on Apple turned out to assume
 the simplest possible capital structure: no minority interests, no mezzanine
 equity, no non-interest non-operating items. **One happy-path company cannot
 validate a schema meant for messy ones** — it can only confirm the arithmetic.
-Two of the three findings are now fixed; the minority-interest gap is not.
+All three findings are now fixed, each one found by a different real filing.
 
 

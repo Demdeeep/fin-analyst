@@ -38,6 +38,7 @@ def make_row(**overrides) -> dict:
         "operating_expenses": 300.0, "operating_income": 100.0,
         "interest_expense": 10.0, "other_income": -10.0,
         "pretax_income": 90.0, "tax_expense": 20.0,
+        "minority_interest": 0.0,
         "net_income": 70.0, "ebitda": 130.0, "depreciation_amortization": 30.0,
         "diluted_shares": 100.0,
         "cash_and_equivalents": 100.0, "accounts_receivable": 80.0, "inventory": 100.0,

@@ -32,7 +32,8 @@ TEXT_COLUMNS = (
 
 NUMERIC_COLUMNS = (
     "revenue", "cogs", "gross_profit", "operating_expenses", "operating_income",
-    "interest_expense", "other_income", "pretax_income", "tax_expense", "net_income",
+    "interest_expense", "other_income", "pretax_income", "tax_expense",
+    "minority_interest", "net_income",
     "ebitda", "depreciation_amortization", "diluted_shares", "cash_and_equivalents",
     "accounts_receivable", "inventory", "total_current_assets", "total_assets",
     "accounts_payable", "short_term_debt", "total_current_liabilities",
