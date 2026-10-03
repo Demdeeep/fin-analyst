@@ -62,22 +62,25 @@ diff:
 .venv/bin/python -m pytest tests/ -q   # confirms the current mismatch
 ```
 
-## Known gaps
+## Known gap
 
-**All identity gaps found by the sanity checks are closed.** Verified against
-two real 10-Ks — Apple's and Beyond Meat's — with all four accounting
-identities reconciling on both, and computed EPS matching the filed EPS to the
-cent in each case. The checks are documented in `docs/stage1.md`, including the
-three wrong definitions those filings exposed and how each was fixed.
+**One definitional caveat: leases are excluded from debt.** For Target that
+understates leverage by about **10 percentage points** (our 27.8% vs 37.8%
+including all lease liabilities). Operating leases are arguably not debt; finance
+leases (~$2.1bn, 3.4pp) are, and rating agencies add them. This is documented,
+quantified in `docs/stage1.md`, and deliberately does not raise a flag — a
+definitional choice is not a data error.
 
-What is *not* yet covered is a third industry shape. A lease-heavy retailer
-would expose that our debt definition excludes operating leases, and a bank
-raises a design question rather than a bug: for a bank, interest is revenue, so
-`operating_income` and `net_margin` are not meaningful as defined — the tool
-would need to refuse rather than emit confident nonsense.
+**Still missing: the bank case.** For a bank, interest is *revenue*, so
+`operating_income` and `net_margin` are not meaningful as defined. The tool would
+compute correct numbers describing nothing real. Fixing that means giving it
+the ability to refuse and say the definitions do not apply — a new capability,
+not a correction.
 
-Sanity coverage is still only two companies. That is enough to have caught three
-real defects, and nowhere near enough to claim the schema is general.
+Verified against three real 10-Ks (Apple, Beyond Meat, Target) with all four
+accounting identities reconciling and filed EPS matching on every one. That
+caught four real defects, and it is still nowhere near enough to claim the
+schema is general.
 
 ## Layout
 

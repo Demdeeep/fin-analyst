@@ -423,5 +423,193 @@ def test_balance_sheet_is_skipped_rather_than_faked(bynd_frame):
         ) is None
 
 
+# ===========================================================================
+# Third industry shape: a lease-heavy retailer
+# ===========================================================================
+#
+# Source: Target Corporation, CIK 0000027419, FY2024-FY2026, SEC EDGAR XBRL
+# companyfacts, retrieved 2026-10-01, in tests/fixtures/target_fy2024_2026.csv.
+#
+# Why this company: the first two questioned the *arithmetic*. This one
+# questions a *definition*. Our debt is `short_term_debt + long_term_debt` as
+# tagged, leases excluded. For a retailer running most of its estate on lease
+# that is a large omission, and US GAAP's split between operating and finance
+# leases makes the judgement call explicit rather than academic.
+#
+# The fiscal years end in late January, so this is not a calendar-year company
+# like the other two.
+
+TARGET = "tests/fixtures/target_fy2024_2026.csv"
+
+#: Lease obligations in USD millions, from Target's 10-Ks. Deliberately *not* in
+#: the fixture: they are what these tests are about, and they are not part of
+#: the base schema.
+LEASE_LIABILITIES = {
+    2024: {"operating_noncurrent": 3279.0, "operating_current": 329.0,
+           "finance_noncurrent": 1894.0, "finance_current": 119.0},
+    2025: {"operating_noncurrent": 3582.0, "operating_current": 353.0,
+           "finance_noncurrent": 2025.0, "finance_current": 136.0},
+    2026: {"operating_noncurrent": 3462.0, "operating_current": 372.0,
+           "finance_noncurrent": 1982.0, "finance_current": 131.0},
+}
+
+
+@pytest.fixture(scope="module")
+def tgt_frame():
+    return load_financials(TARGET).frame
+
+
+@pytest.fixture(scope="module")
+def tgt_metrics(tgt_frame):
+    return compute_metric_frame(tgt_frame)
+
+
+def tgt_row(metrics, fiscal_year):
+    return metrics[metrics["fiscal_year"] == fiscal_year].iloc[0]
+
+
+def leases(fiscal_year):
+    entry = LEASE_LIABILITIES[fiscal_year]
+    return (entry["operating_noncurrent"] + entry["operating_current"],
+            entry["finance_noncurrent"] + entry["finance_current"])
+
+
+# ---------------------------------------------------------------------------
+# Identities still hold
+# ---------------------------------------------------------------------------
+def test_core_identities_hold_on_a_third_company(tgt_frame):
+    """A third company, a third reporting style, same result."""
+    dataset = load_financials(TARGET)
+    assert dataset.warnings == (), dataset.warnings
+    for row in tgt_frame.to_dict("records"):
+        for line, residual in calc.income_statement_residuals(row).items():
+            assert residual == pytest.approx(0.0, abs=0.05), line
+
+
+def test_other_income_model_survives_a_different_tagging_pattern(tgt_frame):
+    """Apple reports one net non-operating line; Target reports interest and
+    other *separately*. The model must absorb both.
+
+        FY2026  EBIT 5,117 + (other 95 - interest 445) = 4,767 filed pre-tax
+    """
+    expected = {2024: -410.0, 2025: -305.0, 2026: -350.0}
+    for row in tgt_frame.to_dict("records"):
+        year = row["fiscal_year"]
+        assert row["other_income"] == pytest.approx(expected[year], abs=0.01)
+        assert row["operating_income"] + row["other_income"] == pytest.approx(
+            row["pretax_income"], abs=0.05
+        )
+
+
+def test_eps_matches_what_target_filed(tgt_metrics, tgt_frame):
+    """Diluted EPS as Target itself filed it: 8.94 / 8.86 / 8.13.
+
+    An external anchor -- this project does not compute these numbers -- and the
+    third company where the agreement holds.
+
+    ``diluted_shares`` is not carried into the metrics frame, so the share count
+    comes from the source row.
+    """
+    filed = {2024: 8.94, 2025: 8.86, 2026: 8.13}
+    for fiscal_year, expected in filed.items():
+        computed = tgt_row(tgt_metrics, fiscal_year)["earnings_per_share"]
+        source = tgt_frame[tgt_frame["fiscal_year"] == fiscal_year].iloc[0]
+        assert computed == pytest.approx(
+            source["net_income"] / source["diluted_shares"], rel=1e-9
+        )
+        assert computed == pytest.approx(expected, abs=0.005), fiscal_year
+
+
+def test_balance_sheet_check_is_skipped_where_liabilities_are_untagged(tgt_frame):
+    """Target tags no `Liabilities` fact, so the check must be skipped.
+
+    It could be derived as assets minus equity, but that would make the identity
+    a tautology. Skipped is the honest outcome, and the third company to need it.
+    """
+    for row in tgt_frame.to_dict("records"):
+        assert pd.isna(row["total_liabilities"])
+        assert calc.balance_sheet_residual(
+            row["total_assets"], row["total_liabilities"], row["total_equity"]
+        ) is None
+
+
+# ---------------------------------------------------------------------------
+# The debt definition -- a documented caveat, not a bug
+# ---------------------------------------------------------------------------
+def test_our_debt_excludes_both_lease_types(tgt_metrics):
+    """Our total debt is borrowings only. Leases are not in it, by design."""
+    for fiscal_year in LEASE_LIABILITIES:
+        row = tgt_row(tgt_metrics, fiscal_year)
+        operating, finance = leases(fiscal_year)
+        assert (operating + finance) / row["total_assets"] > 0.09, fiscal_year
+
+
+def test_lease_exclusion_understates_leverage_by_about_ten_points(tgt_metrics):
+    """The caveat, quantified, so it cannot be discovered by surprise.
+
+        fiscal year   ours     + operating   + all leases   understated
+        FY2024        27.6%       34.1%         37.7%         10.2pp
+        FY2025        26.9%       33.7%         37.5%         10.6pp
+        FY2026        27.8%       34.2%         37.8%         10.0pp
+
+    An agent reading ``debt_to_assets`` for a retailer should know it is not the
+    number a rating agency would quote.
+    """
+    for fiscal_year in LEASE_LIABILITIES:
+        row = tgt_row(tgt_metrics, fiscal_year)
+        operating, finance = leases(fiscal_year)
+        ours = row["debt_to_assets"]
+        with_all = (row["total_debt"] + operating + finance) / row["total_assets"]
+        assert 0.25 < ours < 0.30, fiscal_year
+        assert 0.09 < with_all - ours < 0.12, fiscal_year
+
+
+def test_finance_leases_are_the_unambiguous_half_of_the_caveat(tgt_metrics):
+    """Operating leases are arguably not debt. Finance leases are.
+
+    A finance lease is a financing obligation recognised on the balance sheet,
+    and rating agencies add it to debt without discussion. Excluding it is a
+    real understatement rather than a matter of taste, which is why this is
+    recorded as a caveat instead of simply accepted.
+    """
+    for fiscal_year in LEASE_LIABILITIES:
+        row = tgt_row(tgt_metrics, fiscal_year)
+        _, finance = leases(fiscal_year)
+        # ~2.0bn against ~59bn of assets: about 3.4 percentage points.
+        assert 0.025 < finance / row["total_assets"] < 0.045, fiscal_year
+
+
+def test_the_caveat_does_not_become_a_false_alarm(tgt_metrics):
+    """A definitional caveat is not a data error.
+
+    Target is a clean filing. Documenting the lease omission must not turn it into
+    an ``identity_mismatch`` flag, which is the failure mode every previous bug
+    in this file had.
+    """
+    frame = load_financials(TARGET).frame
+    context = an.AnalysisContext(metrics=tgt_metrics, source=frame)
+    assert an.identity_mismatch(context) == []
+
+
+def test_a_bank_would_be_wrong_in_a_way_a_retailer_is_not(tgt_metrics):
+    """Why the fourth shape is still outstanding, stated as a test.
+
+    For a bank, interest is *revenue*, so `operating_income` and `net_margin`
+    are not meaningful as defined -- the same numbers are produced, correctly
+    computed, describing nothing real. Target is the opposite case: our
+    definitions hold and only an omission is arguable.
+
+    This test records the distinction rather than leaving it in prose. It asserts
+    the retailer case still works, which is what makes the bank case a
+    *different* problem rather than just another company to add.
+    """
+    row = tgt_row(tgt_metrics, 2026)
+    assert 0.04 < row["operating_margin"] < 0.06
+    assert 0.03 < row["net_margin"] < 0.04
+    # Interest is an expense here, which is the assumption a bank breaks.
+    assert row["interest_coverage"] > 1.0
+
+
+
 
 

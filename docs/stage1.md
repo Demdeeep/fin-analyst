@@ -234,4 +234,66 @@ equity, no non-interest non-operating items. **One happy-path company cannot
 validate a schema meant for messy ones** — it can only confirm the arithmetic.
 All three findings are now fixed, each one found by a different real filing.
 
+## Third industry shape: a lease-heavy retailer
+
+The first two companies questioned the *arithmetic*. This one questions a
+*definition*.
+
+**Source:** Target Corporation, CIK 0000027419, FY2024–FY2026, SEC EDGAR XBRL
+`companyfacts`, retrieved 2026-10-01, in `tests/fixtures/target_fy2024_2026.csv`.
+Its fiscal years end in late January, so it is not a calendar-year company like
+the other two.
+
+### What still holds
+
+All four identities reconcile, with zero loader warnings. Filed diluted EPS
+matches on all three years: **8.94 / 8.86 / 8.13**.
+
+Target also gives the `other_income` model a third independent test, because it
+reports interest and other income as **separate** lines where Apple reported one
+net figure:
+
+```
+FY2026  EBIT 5,117 + (other 95 − interest 445) = 4,767 filed pre-tax
+```
+
+### The finding: leases are excluded from debt, and that is material
+
+Our debt is `short_term_debt + long_term_debt` as tagged. Leases are not in it.
+
+| fiscal year | our debt/assets | + operating leases | + all leases | understated by |
+|---|---|---|---|---|
+| FY2024 | 27.6% | 34.1% | 37.7% | **10.2pp** |
+| FY2025 | 26.9% | 33.7% | 37.5% | **10.6pp** |
+| FY2026 | 27.8% | 34.2% | 37.8% | **10.0pp** |
+
+For a retailer running most of its estate on lease, that is the difference
+between what our tool reports and what a rating agency would quote. An agent
+reading `debt_to_assets` deserves to know that.
+
+The judgement splits in two. **Operating leases** (~$3.8bn) are arguably not
+debt — they are rent, and the rent is already in operating expenses.
+**Finance leases** (~$2.1bn, about 3.4pp of assets) are a financing obligation
+recognised on the balance sheet, and rating agencies add them to debt without
+discussion. Excluding those is a real understatement, not a matter of taste.
+
+This is recorded as a documented caveat rather than a defect, and deliberately
+does **not** raise a flag: Target is a clean filing, and turning a definitional
+choice into a data error is the failure mode every previous bug here had.
+
+Note also that Target tags no `Liabilities` fact at all, so its balance-sheet
+check is *skipped* — the third company to need that treatment. Deriving it as
+assets minus equity would have made the identity a tautology.
+
+### The fourth shape is still outstanding
+
+A **bank** is a different problem, not just another company to add. For a bank,
+interest is *revenue*, so `operating_income` and `net_margin` are not
+meaningful as defined — the tool would compute correct numbers describing
+nothing real. Fixing that means giving the tool the ability to **refuse** and
+say the definitions do not apply, which is a new capability rather than a
+correction. `test_a_bank_would_be_wrong_in_a_way_a_retailer_is_not` records the
+distinction so it cannot be quietly forgotten.
+
+
 
