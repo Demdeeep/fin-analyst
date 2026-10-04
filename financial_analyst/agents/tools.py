@@ -35,11 +35,14 @@ CITEABLE_METRICS: frozenset[str] = frozenset(
     METRIC_COLUMNS + REPORTED_COLUMNS + COMPANY_COLUMNS
 )
 
-#: How an agent asks for tools. A fenced line, so a model cannot emit it
-#: accidentally inside prose. Horizontal whitespace only: ``\s`` would match the
-#: newline and swallow the lines that follow.
+#: How an agent asks for tools. Deliberately *not* anchored to the start of the
+#: line: models routinely write "I'll need these. TOOL: a, b" rather than
+#: putting the request on its own line, and rejecting that would silently drop
+#: every metric the agent asked for. It still stops at the end of the line, so it
+#: cannot swallow the lines that follow, and it uses horizontal whitespace only
+#: because ``\s`` would match the newline.
 TOOL_REQUEST = re.compile(
-    r"^[ \t]*TOOL:[ \t]*(?P<names>[A-Za-z0-9_, \t]+?)[ \t]*$", re.MULTILINE
+    r"TOOL:[ \t]*(?P<names>[A-Za-z0-9_, \t]+?)[ \t]*$", re.MULTILINE
 )
 
 
