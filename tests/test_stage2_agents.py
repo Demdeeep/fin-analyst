@@ -23,6 +23,7 @@ from financial_analyst.agents.critic import (
     CriticAgent,
     _parse_verdict,
 )
+from financial_analyst.agents.flags import load_flag_refs
 from financial_analyst.agents.orchestrator import Orchestrator
 from financial_analyst.agents.providers.stub import ExplodingLLM, ScriptedLLM
 from financial_analyst.agents.tools import MetricStore
@@ -238,13 +239,34 @@ def test_stage2_json_is_valid_and_carries_verdicts(staged, tmp_path):
 
 
 def test_stage2_passes_flags_into_the_prompt(staged):
+    """Flags must reach both the analyst's prompt and the critic's screen."""
     metrics, flags = staged
-    client = ScriptedLLM(["TOOL: gross_margin", GOOD, "OK\nfine"])
+    # LOSS's own figures: TST's prose would not reconcile against this store.
+    loss_prose = "Revenue was 430.0M with gross margin 40.0%."
+    client = ScriptedLLM(
+        ["TOOL: gross_margin", loss_prose,
+         "ADDRESSED: low_interest_coverage FY2024\ncovered on revenue"]
+    )
     store = MetricStore.from_json(metrics)
-    lines = stage2.load_flags(flags)
-    assert lines["LOSS"][0].startswith("[critical] low_interest_coverage")
-    Orchestrator(client, store).run("LOSS", flags=lines["LOSS"])
+    refs = load_flag_refs(flags)
+    assert refs["LOSS"][0].rule == "low_interest_coverage"
+
+    result = Orchestrator(client, store).run("LOSS", flags=refs["LOSS"])
+    # The analyst is shown the rendered flag line...
     assert "low_interest_coverage" in client.calls[0].user
+    # ...and the critic's screen saw the flag, whatever it concluded.
+    assert result.flags_considered == 1
+
+
+def test_the_orchestrator_refuses_rendered_flag_strings(staged):
+    """A bare AttributeError would send someone hunting the wrong bug."""
+    metrics, flags = staged
+    store = MetricStore.from_json(metrics)
+    client = ScriptedLLM(["TOOL: gross_margin", GOOD])
+    with pytest.raises(TypeError, match="FlagRef"):
+        Orchestrator(client, store).run(
+            "LOSS", flags=stage2.load_flags(flags)["LOSS"]
+        )
 
 
 def test_stage2_can_limit_to_one_ticker(staged, tmp_path):

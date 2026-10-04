@@ -38,14 +38,8 @@ def span_of(store: MetricStore, ticker: str) -> str:
     return f"FY{years[0]}-FY{years[-1]} ({len(years)} years)"
 
 
-def flags_section(flags: Sequence[str]) -> str:
-    """The flags block, or an explicit note that the rules found nothing.
+def flags_section(flags) -> str:
+    """Render the flags block for a prompt."""
+    from .flags import render_section
 
-    The wording matters: "no flags" must not read as "no problems". Stage 1's
-    report says the same thing, and an agent that reads it as a clean bill of
-    health will write a clean bill of health.
-    """
-    if not flags:
-        return prompts.ANALYST_FLAGS_NONE
-    lines = "\n".join(f"  {flag}" for flag in flags)
-    return prompts.ANALYST_FLAGS_PRESENT.format(flag_lines=lines)
+    return render_section(flags)

@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
 from .analyst import AnalystAgent, AnalystResult
-from .critic import CriticAgent, CriticVerdict, OK, REVISE
+from .critic import CriticAgent, CriticVerdict, OK, REJECT, REVISE
 from .providers.base import LLMClient
 from .tools import MetricStore
 from .verification import ClaimIssue
@@ -31,10 +31,17 @@ class Stage2Result:
     narrative: str
     verdict: str
     issues: tuple[ClaimIssue, ...] = ()
+    coverage: tuple = ()
     revisions: int = 0
     tools_requested: tuple[str, ...] = ()
     critic_notes: str = ""
     model_calls: int = 0
+    flags_considered: int = 0
+    flags_addressed: int = 0
+    #: Carried from the critic rather than recomputed here. REJECT has two
+    #: causes with opposite answers, and deriving it from the verdict word plus
+    #: the issue list is exactly the conflation this field exists to prevent.
+    retryable: bool = True
 
     @property
     def verified(self) -> bool:
@@ -47,7 +54,12 @@ class Stage2Result:
             "narrative": self.narrative,
             "verdict": self.verdict,
             "verified": self.verified,
+            "flags_considered": self.flags_considered,
+            "flags_addressed": self.flags_addressed,
             "issues": [str(issue) for issue in self.issues],
+            "unaddressed_flags": [
+                str(item) for item in self.coverage if item.needs_review
+            ],
             "revisions": self.revisions,
             "tools_requested": list(self.tools_requested),
             "critic_notes": self.critic_notes,
@@ -73,31 +85,32 @@ class Orchestrator:
         self.max_revisions = max_revisions
 
     def run(
-        self, ticker: str, flags: Sequence[str] = ()
+        self, ticker: str, flags: Sequence = ()
     ) -> Stage2Result:
         """Analyse one company and review the result.
 
-        The revision loop is bounded by ``max_revisions``. A verdict of REJECT
-        stops immediately: the mechanical failure behind it is not something
-        another attempt at the prose will fix.
+        The loop is bounded by ``max_revisions``, and gated on
+        ``retryable``: an unaddressed flag is exactly what a retry can fix,
+        while a metric Stage 1 declined to compute being given a number is not
+        repairable by rewording and is not worth a second attempt.
         """
         analyst_result = self.analyst.analyse(ticker, flags=flags)
-        verdict = self.critic.review(ticker, analyst_result.narrative)
+        verdict = self.critic.review(
+            ticker, analyst_result.narrative, flags=flags
+        )
         revisions = 0
 
-        while (
-            verdict.verdict == REVISE
-            and revisions < self.max_revisions
-            and not _is_hard_failure(verdict)
-        ):
+        while verdict.verdict == REVISE and revisions < self.max_revisions:
             analyst_result = self.analyst.analyse(
                 ticker,
                 flags=list(flags) + [
-                    f"(previous attempt rejected: {verdict.verdict} -- "
+                    f"(previous attempt was rejected: {verdict.verdict} -- "
                     f"{verdict.notes or 'unsupported claim'})"
                 ],
             )
-            verdict = self.critic.review(ticker, analyst_result.narrative)
+            verdict = self.critic.review(
+                ticker, analyst_result.narrative, flags=flags
+            )
             revisions += 1
 
         return Stage2Result(
@@ -105,13 +118,12 @@ class Orchestrator:
             narrative=analyst_result.narrative,
             verdict=verdict.verdict,
             issues=verdict.issues,
+            coverage=verdict.coverage,
             revisions=revisions,
             tools_requested=analyst_result.tools_requested,
             critic_notes=verdict.notes,
             model_calls=revisions * 4 + 2,
+            flags_considered=verdict.flags_considered,
+            flags_addressed=verdict.flags_addressed,
+            retryable=verdict.retryable,
         )
-
-
-def _is_hard_failure(verdict: CriticVerdict) -> bool:
-    """A numerified-undefined finding is not fixable by rewording."""
-    return any(issue.kind == "numerified_undefined" for issue in verdict.issues)

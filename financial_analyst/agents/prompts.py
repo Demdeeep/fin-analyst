@@ -33,7 +33,10 @@ Rules, in priority order:
    support it with one, either drop it or say plainly that it is a question
    rather than a finding.
 5. Address the flags. A critical flag left unmentioned is the worst thing you
-   can do here.
+   can do here. **When you engage with a flag, name its rule id** -- write
+   "the low_interest_coverage flag", not "interest looks tight". A downstream
+   check uses that id to confirm you engaged with it, and a paraphrased flag
+   that never names itself is indistinguishable from one you ignored.
 6. Write for a reader who will act on this. Lead with what matters most.
 
 Answer in two turns. First turn: state briefly which metrics you need and emit
@@ -104,8 +107,46 @@ Company: {company_name} ({ticker})
 Mechanical figure check:
 {verification_section}
 
+Flag coverage:
+{coverage_section}
+
 Analysis under review:
 {narrative}
 
 Verdict?
+"""
+
+CRITIC_FLAG_SYSTEM = """\
+You are deciding whether a financial analysis genuinely engaged with specific
+anomaly flags raised by a deterministic pipeline.
+
+An automated screen has already flagged some flags as showing no trace in the
+analysis. That screen is deliberately blunt: it searches for the rule name and
+the flag's own value, so an analysis that addresses the point in different words
+can look identical to one that ignored it. Your judgement is the last word.
+
+For each candidate, decide whether the analysis substantively engages with it.
+Quoting the number is not engagement. Asserting the opposite conclusion is not
+engagement. Explaining why it matters -- or why it is not material -- is.
+
+Answer with one line per flag you judge to be genuinely addressed:
+
+ADDRESSED: <rule name> <year label>
+
+Then optionally one short note. If none of them are genuinely addressed, reply
+with the single word NONE. Do not write anything before the list; the caller
+parses it.
+"""
+
+CRITIC_FLAG_USER = """\
+Company: {company_name} ({ticker})
+
+Flags a mechanical screen could not find any trace of:
+
+{candidates}
+
+Analysis under review:
+{narrative}
+
+Which of these are genuinely addressed?
 """

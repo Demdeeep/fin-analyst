@@ -24,6 +24,8 @@ import pandas as pd
 
 from .. import config
 from ..agents.orchestrator import Orchestrator, Stage2Result
+from ..agents.critic import REJECT
+from ..agents.flags import load_flag_refs
 from ..agents.providers import build_client
 from ..agents.tools import MetricStore
 
@@ -32,22 +34,16 @@ OUTPUT_STAGE2_MD = "stage2_analysis.md"
 
 
 def load_flags(path: Path) -> dict[str, list[str]]:
-    """Stage 1's flags as human-readable lines, grouped by ticker.
+    """Pre-rendered flag lines, for callers that only need text.
 
-    Prefixed with severity and rule name, so the agent sees *which* rule fired
-    rather than only that something did -- that is the difference between "23
-    flags" and a signal it can reason about.
+    The structured path is :func:`financial_analyst.agents.flags.load_flag_refs`;
+    this stays because a test or a hand-written brief may want the same wording
+    without the record type.
     """
-    if not path.exists():
-        return {}
-    frame = pd.read_csv(path)
-    grouped: dict[str, list[str]] = {}
-    for row in frame.to_dict("records"):
-        year = f"FY{int(row['fiscal_year'])}" if pd.notna(row.get("fiscal_year")) else "n/a"
-        grouped.setdefault(str(row["ticker"]), []).append(
-            f"[{row['severity']}] {row['rule']} {year}: {row['message']}"
-        )
-    return grouped
+    return {
+        ticker: [flag.render() for flag in flags]
+        for ticker, flags in load_flag_refs(path).items()
+    }
 
 
 def render_report(results: list[Stage2Result], provider: str) -> str:
@@ -64,11 +60,18 @@ def render_report(results: list[Stage2Result], provider: str) -> str:
         "",
     ]
     for result in results:
+        coverage = (
+            f" — flags addressed {result.flags_addressed}/{result.flags_considered}"
+            if result.flags_considered else ""
+        )
+        retry = "" if result.verdict != REJECT else (
+            "" if result.retryable else " (not retryable)"
+        )
         lines += [
             f"## {result.ticker}",
             "",
-            f"Verdict: **{result.verdict}**"
-            + (" — all figures verified" if result.verified else "")
+            f"Verdict: **{result.verdict}**{retry}"
+            + (" — all figures verified" if result.verified else "") + coverage
             + (f" · {result.revisions} revision(s)" if result.revisions else ""),
             "",
             result.narrative,
@@ -77,8 +80,13 @@ def render_report(results: list[Stage2Result], provider: str) -> str:
         if result.tools_requested:
             lines += ["Metrics used: " + ", ".join(result.tools_requested), ""]
         if result.issues:
-            lines.append("Unverified claims:")
+            lines.append("Unverified figures:")
             lines += [f"- {issue}" for issue in result.issues]
+            lines.append("")
+        unaddressed = [item for item in result.coverage if item.needs_review]
+        if unaddressed:
+            lines.append(f"Flags not addressed ({len(unaddressed)}):")
+            lines += [f"- {item}" for item in unaddressed]
             lines.append("")
         if result.critic_notes:
             lines += [f"Critic: {result.critic_notes}", ""]
@@ -115,13 +123,13 @@ def run_stage2(
     if store.empty:
         raise ValueError(f"{metrics_path} contains no companies")
 
-    flags_by_ticker = load_flags(flags_path)
+    flags_by_ticker = load_flag_refs(flags_path)
     client = build_client(provider)
     orchestrator = Orchestrator(client, store, consult_critic_model=consult_critic_model)
 
     selected = tickers or list(store.tickers)
     results = [
-        orchestrator.run(ticker, flags=flags_by_ticker.get(ticker, []))
+        orchestrator.run(ticker, flags=flags_by_ticker.get(ticker, ()))
         for ticker in selected
     ]
 

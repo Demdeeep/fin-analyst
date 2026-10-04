@@ -44,6 +44,25 @@ MARGIN_COMPRESSION_THRESHOLD_PP = 5.0
 
 SEVERITIES = ("info", "warning", "critical")
 
+# ---------------------------------------------------------------------------
+# Flag-coverage policy (Stage 2 critic)
+# ---------------------------------------------------------------------------
+#: Ignoring a flag at these severities is a defect, not a judgement call. An
+#: analysis that omits "operating income covers interest 0.36x, below the
+#: threshold" while presenting a confident summary is actively misleading --
+#: arguably worse than a hallucinated figure, because a wrong figure at least
+#: looks wrong on inspection.
+MUST_ADDRESS_SEVERITIES = ("critical",)
+
+#: Ignoring a flag at these severities is usually correct. A company with 17
+#: warning flags and five sentences of prose cannot address all of them, and a
+#: check that fires on every analysis is a check whose reader learns to ignore
+#: it. So these are recorded and reported, but they do not move the verdict.
+ADVISORY_SEVERITIES = ("warning",)
+
+#: Never required to be addressed. Informational provenance notes.
+OPTIONAL_SEVERITIES = ("info",)
+
 __all__ = [
     "PROJECT_ROOT",
     "DATA_DIR",
@@ -64,4 +83,7 @@ __all__ = [
     "MARGIN_COMPRESSION_THRESHOLD_PP",
     "DAYS_PER_YEAR",
     "SEVERITIES",
+    "MUST_ADDRESS_SEVERITIES",
+    "ADVISORY_SEVERITIES",
+    "OPTIONAL_SEVERITIES",
 ]
