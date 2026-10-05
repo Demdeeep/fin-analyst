@@ -47,3 +47,24 @@ def build_client(provider: str = "stub", **options):
         return ScriptedLLM()
 
     raise ValueError(f"unknown provider {provider!r}; expected stub, openai or auto")
+
+
+def describe(provider: str = "auto", **options) -> str:
+    """One line on which provider a run would actually use, and why.
+
+    Worth having before a live run: ``provider='auto'`` with no key silently
+    produces stub output, and a report that looks finished but was written by a
+    ``ScriptedLLM`` placeholder is the worst possible outcome of a mistyped flag.
+    """
+    config = ProviderConfig(**options)
+    if provider == "stub":
+        return "stub (deterministic; no model call)"
+    if provider == "openai":
+        if not config.is_configured:
+            return f"openai UNAVAILABLE ({config.api_key_env} not set)"
+        return f"openai model={config.model}"
+    if provider == "auto":
+        if config.is_configured:
+            return f"auto -> openai model={config.model}"
+        return f"auto -> stub (no {config.api_key_env})"
+    raise ValueError(f"unknown provider {provider!r}; expected stub, openai or auto")

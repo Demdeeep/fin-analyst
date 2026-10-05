@@ -14,6 +14,12 @@ dev = [
     "pytest-cov==6.0.0",
     "hypothesis==6.122.3",
 ]
+# Live model access. Optional on purpose: Stage 1 and the whole test suite run
+# without it, and the OpenAI adapter imports the SDK lazily so an absent package
+# only matters at the moment a live call is attempted.
+openai = [
+    "openai>=1.0.0",
+]
 
 [build-system]
 requires = ["hatchling"]

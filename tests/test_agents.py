@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import pytest
 
+from types import SimpleNamespace
+
 from financial_analyst.agents import verification
-from financial_analyst.agents.providers import build_client
+from financial_analyst.agents.providers import build_client, describe
 from financial_analyst.agents.providers.base import CompletionError, ProviderConfig
 from financial_analyst.agents.providers.stub import (
     AlwaysSays,
@@ -103,6 +105,197 @@ def test_provider_config_never_exposes_the_key(monkeypatch):
     # A blank key counts as absent rather than as an empty credential.
     monkeypatch.setenv("TEST_KEY", "   ")
     assert not config.is_configured
+
+
+def _make_response(content, finish_reason="stop"):
+    """A stand-in for the SDK's response object.
+
+    Only the attributes the adapter touches, so a truncation test does not
+    depend on the SDK's shape.
+    """
+    message = SimpleNamespace(content=content)
+    choice = SimpleNamespace(message=message, finish_reason=finish_reason)
+    return SimpleNamespace(choices=[choice])
+
+
+def test_a_truncated_reply_is_recorded_not_raised(monkeypatch):
+    """Truncation reads as malformed prose, so it must be distinguishable.
+
+    The critic's verdict parser cannot tell a clipped reply from a genuinely
+    unparseable one. Raising here would abort the run; recording it lets the
+    orchestrator finish and report that this reply is not trustworthy.
+    """
+    from financial_analyst.agents.providers.openai_client import OpenAIClient
+
+    client = OpenAIClient(config=ProviderConfig())
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(
+                create=lambda **kwargs: _make_response("The analysis is cut", "length")
+            )
+        )
+    )
+    assert client.complete(system="s", user="u") == "The analysis is cut"
+    assert client.truncated == ["The analysis is cut"]
+    assert client.last_finish_reason == "length"
+
+
+def test_a_complete_reply_records_no_truncation(monkeypatch):
+    from financial_analyst.agents.providers.openai_client import OpenAIClient
+
+    client = OpenAIClient(config=ProviderConfig())
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(
+                create=lambda **kwargs: _make_response("All done.", "stop")
+            )
+        )
+    )
+    assert client.complete(system="s", user="u") == "All done."
+    assert client.truncated == []
+
+
+def test_an_empty_reply_carries_its_finish_reason():
+    """An empty completion with no reason is a different failure to diagnose."""
+    from financial_analyst.agents.providers.openai_client import OpenAIClient
+
+    client = OpenAIClient(config=ProviderConfig())
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(
+                create=lambda **kwargs: _make_response(None, "content_filter")
+            )
+        )
+    )
+    with pytest.raises(CompletionError) as error:
+        client.complete(system="s", user="u")
+    assert error.value.finish_reason == "content_filter"
+    assert "content_filter" in str(error.value)
+
+
+def test_completion_error_without_a_finish_reason_still_works():
+    """The constructor stayed one-argument compatible."""
+    assert CompletionError("boom").finish_reason is None
+
+
+# ---------------------------------------------------------------------------
+# .env loading
+# ---------------------------------------------------------------------------
+def test_a_dotenv_file_supplies_the_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("TEST_KEY", raising=False)
+    path = tmp_path / ".env"
+    path.write_text("# a comment\nexport TEST_KEY='sk-from-file'\n")
+
+    config = ProviderConfig(api_key_env="TEST_KEY", dotenv_path=str(path))
+    assert config.api_key == "sk-from-file"
+    assert config.is_configured
+
+
+def test_an_exported_key_is_not_overridden_by_the_file(tmp_path, monkeypatch):
+    """A shell export is more deliberate than a file and should win."""
+    monkeypatch.setenv("TEST_KEY", "sk-from-shell")
+    path = tmp_path / ".env"
+    path.write_text("TEST_KEY=sk-from-file\n")
+
+    config = ProviderConfig(api_key_env="TEST_KEY", dotenv_path=str(path))
+    assert config.api_key == "sk-from-shell"
+
+
+def test_a_missing_dotenv_file_is_not_an_error(monkeypatch):
+    monkeypatch.delenv("TEST_KEY", raising=False)
+    config = ProviderConfig(api_key_env="TEST_KEY",
+                            dotenv_path="/nonexistent/path/.env")
+    assert not config.is_configured
+
+
+def test_malformed_dotenv_lines_are_skipped_quietly(tmp_path, monkeypatch):
+    monkeypatch.delenv("TEST_KEY", raising=False)
+    path = tmp_path / ".env"
+    path.write_text("not an assignment\n\nTEST_KEY=sk-good\n# trailing note\n")
+
+    config = ProviderConfig(api_key_env="TEST_KEY", dotenv_path=str(path))
+    assert config.api_key == "sk-good"
+
+
+def test_dotenv_is_not_consulted_unless_asked(monkeypatch, tmp_path):
+    """Default behaviour is environment-only, so an unexpected file cannot
+    silently supply a credential."""
+    monkeypatch.delenv("TEST_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("TEST_KEY=sk-sneaky\n")
+    assert not ProviderConfig(api_key_env="TEST_KEY").is_configured
+
+
+def test_describe_makes_a_stub_run_impossible_to_mistake_for_a_live_one(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert "stub" in describe("auto")
+    assert "UNAVAILABLE" in describe("openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    assert "gpt-4o-mini" in describe("openai")
+    assert "stub" not in describe("auto")
+
+
+def test_a_missing_dotenv_file_warns_rather_than_silently_continuing(tmp_path, capsys):
+    """An unreadable .env must be visible, not an invisible no-key run.
+
+    Otherwise a typo in the path produces stub output while the operator
+    believes they asked for a live one.
+    """
+    from financial_analyst.stages import stage2_agents
+
+    stage2_agents.main(["--no-write", "--dotenv", str(tmp_path / "absent.env")])
+    captured = capsys.readouterr()
+    assert "absent.env" in captured.err
+    assert "not found" in captured.err
+
+
+def test_the_cli_announces_which_provider_will_run(capsys):
+    """A finished-looking report written by a placeholder is the worst outcome."""
+    from financial_analyst.stages import stage2_agents
+
+    stage2_agents.main(["--no-write", "--ticker", "ACME"])
+    assert "provider: stub" in capsys.readouterr().err
+
+
+def test_the_key_never_appears_in_a_config_repr(monkeypatch):
+    """A config object is safe to log, so the key must not ride along.
+
+    ``api_key_env`` is the variable *name*, which is safe and useful. The
+    credential itself is a property, and dataclass reprs only cover fields.
+    """
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-supersecret")
+    rendered = repr(ProviderConfig())
+    assert "sk-supersecret" not in rendered
+    assert "OPENAI_API_KEY" in rendered      # the name is fine, and useful
+
+
+def test_a_missing_key_is_reported_before_a_missing_sdk(monkeypatch):
+    """Both problems at once should name the one you can act on first.
+
+    Installing the SDK is advice you cannot follow until you have a key, and it
+    hides the fact that one is missing.
+    """
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    from financial_analyst.agents.providers.openai_client import OpenAIClient
+
+    with pytest.raises(CompletionError, match="OPENAI_API_KEY"):
+        OpenAIClient().complete(system="s", user="u")
+
+
+def test_a_missing_sdk_names_the_install_extra(monkeypatch):
+    """With a key present, the SDK is the only thing left to fix."""
+    from financial_analyst.agents.providers.openai_client import OpenAIClient
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-present")
+    try:
+        import openai  # noqa: F401
+    except ImportError:
+        with pytest.raises(CompletionError) as error:
+            OpenAIClient().complete(system="s", user="u")
+        assert "openai" in str(error.value)
+        assert "provider='stub'" in str(error.value)
+    else:
+        pytest.skip("the openai SDK is installed, so this failure cannot occur")
 
 
 def test_build_client_falls_back_to_stub_without_a_key(monkeypatch):

@@ -214,11 +214,27 @@ helped, which is the question a person staring at a `REJECT` actually has.
 
 Verified: the pipeline, prompts, tool loop, critic, coverage screen and
 orchestration all execute end to end with **no API key and no network**. A key
-changes prose quality and nothing structural.
+changes prose quality and nothing structural. The OpenAI adapter's response
+handling is exercised against a stubbed SDK — truncation detection, empty
+completions and error wrapping all have tests that need no credentials.
 
-Not verified: the OpenAI adapter has never made a real call, and the model's
-judgement on whether prose is *adequate* has never been exercised against real
-output. Everything mechanical around it has been.
+Not verified: **the adapter has never made a real call.** No live request has
+been sent, so nothing is confirmed about network access, real latency, whether
+the model actually complies with the output format the critic parses, or whether
+a real verdict differs from the stub's. Everything mechanical around it has been.
+
+Two consequences of a live first run are known in advance, and both are handled
+rather than assumed away:
+
+- **A reply truncated at the token limit is indistinguishable from an
+  unparseable one** — it arrives as well-formed prose that stops mid-thought, and
+  the critic's verdict parser cannot tell. `OpenAIClient` records these in
+  `truncated` rather than raising, so a run finishes and can say which replies
+  are untrustworthy.
+- **A run with no key silently produces stub output** under `provider='auto'`.
+  Both CLIs now print `provider: <what will run>` to stderr before spending
+  anything, and `--dotenv` accepts a `.env` file (gitignored; `.env.example` is
+  tracked). An already-exported key wins over the file.
 
 ## Stage 4 (built) — cross-company comparison
 

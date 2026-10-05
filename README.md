@@ -44,7 +44,37 @@ Other entry points:
 ```
 
 Stages 2 and 4 default to the scripted stub provider, so they need no API key.
-Pass `--provider openai` (with `OPENAI_API_KEY` set) to use a real model.
+Pass `--provider openai` to use a real model.
+
+### Live model access
+
+Two prerequisites, and the error message names whichever is missing:
+
+1. **The SDK.** Optional by design — Stage 1 and the whole test suite run without it.
+
+   ```bash
+   uv pip install -e ".[openai]"
+   ```
+
+2. **A key.** `OPENAI_API_KEY`, read from the environment. Copy `.env.example`
+   to `.env` and fill it in, then:
+
+   ```bash
+   .venv/bin/python -m financial_analyst.stages.stage2_agents \
+       --ticker ACME --no-write --provider openai --dotenv .env
+   ```
+
+   A key already exported in your shell wins over the file, so a real
+   credential in `.env` is never silently displaced by a stale one.
+
+Both stage CLIs print `provider: <what will actually run>` to stderr before any
+call is made. Worth reading: `--provider auto` with no key configured silently
+produces stub output, and a finished-looking report written by a placeholder is
+the worst outcome of a mistyped flag.
+
+`.env` is gitignored; `.env.example` is tracked so the variable name is
+discoverable. The key is never logged, echoed into a prompt, or written to an
+artifact.
 
 ## Tests
 

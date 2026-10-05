@@ -26,7 +26,7 @@ from .. import config
 from ..agents.orchestrator import Orchestrator, Stage2Result
 from ..agents.critic import REJECT
 from ..agents.flags import load_flag_refs
-from ..agents.providers import build_client
+from ..agents.providers import build_client, describe
 from ..agents.tools import MetricStore
 
 OUTPUT_STAGE2_JSON = "stage2_analysis.json"
@@ -158,7 +158,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--no-critic-model", action="store_true",
                         help="rely on the mechanical check only")
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument("--dotenv", default=None,
+                        help="path to a .env file holding OPENAI_API_KEY")
     arguments = parser.parse_args(argv)
+
+    # Print the provider before any call is made. `--provider auto` with no key
+    # silently produces stub output, and a finished-looking report written by a
+    # placeholder is the worst outcome of a mistyped flag.
+    if arguments.dotenv is not None:
+        from ..agents.providers.base import load_dotenv
+
+        if not load_dotenv(arguments.dotenv):
+            print(f"warning: {arguments.dotenv} not found", file=sys.stderr)
+    print(f"provider: {describe(arguments.provider)}", file=sys.stderr)
 
     results = run_stage2(
         provider=arguments.provider,

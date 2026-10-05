@@ -25,7 +25,7 @@ from .. import config
 from ..agents import peers
 from ..agents.comparator import DEFAULT_METRICS, ComparatorAgent
 from ..agents.flags import load_flag_refs
-from ..agents.providers import build_client
+from ..agents.providers import build_client, describe
 from ..agents.tools import MetricStore
 from ..agents.verification import verify
 
@@ -145,7 +145,18 @@ def main(argv: Optional[list[str]] = None) -> int:
                         choices=(config.PEER_SCOPE_SECTOR, config.PEER_SCOPE_SAMPLE))
     parser.add_argument("--ticker", action="append", dest="tickers")
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument("--dotenv", default=None,
+                        help="path to a .env file holding OPENAI_API_KEY")
     arguments = parser.parse_args(argv)
+
+    # Announce the provider before spending anything, so `--provider auto` with
+    # no key is visibly not a live run.
+    if arguments.dotenv is not None:
+        from ..agents.providers.base import load_dotenv
+
+        if not load_dotenv(arguments.dotenv):
+            print(f"warning: {arguments.dotenv} not found", file=sys.stderr)
+    print(f"provider: {describe(arguments.provider)}", file=sys.stderr)
 
     results = run_stage4(
         provider=arguments.provider,
