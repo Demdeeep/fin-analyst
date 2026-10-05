@@ -144,13 +144,32 @@ class ToolObservation:
     unknown: tuple[str, ...]
 
     def render(self) -> str:
-        if self.unknown:
+        """What turn two actually sees.
+
+        An unknown name must not suppress the metrics that *did* resolve. The
+        model is not required to get the catalogue right on the first try, and
+        discarding seven good values because one name was wrong hands turn two
+        nothing at all -- which it then quite reasonably reports as "I have no
+        metrics to analyse", with no figure in the sentence for verification to
+        catch. The correction is shown alongside the values, not instead of them.
+        """
+        if not self.values and not self.undefined and self.unknown:
             return (
                 "Unknown metrics: " + ", ".join(self.unknown)
                 + ". Choose only from the catalogue."
             )
-        lines = ["Metric values, most recent reported year:", ""]
-        lines += [f"  {name}: {value}" for name, value in self.values.items()]
+
+        lines: list[str] = []
+        if self.unknown:
+            lines += [
+                "Not in the catalogue, and therefore not supplied: "
+                + ", ".join(self.unknown),
+                "",
+            ]
+        if self.values:
+            lines.append("Metric values, most recent reported year:")
+            lines.append("")
+            lines += [f"  {name}: {value}" for name, value in self.values.items()]
         if self.undefined:
             lines += [
                 "",

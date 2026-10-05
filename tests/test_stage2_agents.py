@@ -76,6 +76,37 @@ def test_analyst_reports_a_hallucinated_tool_name(synthetic_store):
     assert "Unknown metrics" in observation.render()
 
 
+def test_one_bad_name_does_not_discard_the_metrics_that_resolved(synthetic_store):
+    """Found by the first live run: this silently starved the second turn.
+
+    The model asked for eight metrics and misspelled one. Because any unknown
+    name short-circuited the whole render, turn two received *no* values at all
+    and wrote "without specific metrics to analyse" -- which passes verification
+    trivially, since a sentence with no figure in it cannot fail a figure check.
+    The pipeline reported success on an analysis that analysed nothing.
+    """
+    agent = _agent(
+        ["TOOL: gross_margin, net_profit_margin, return_on_equity", GOOD],
+        synthetic_store,
+    )
+    observation = agent.analyse("TST").observation
+    assert observation.unknown == ("net_profit_margin",)
+    rendered = observation.render()
+    # The two that resolved must still be there, and the correction alongside.
+    assert "gross_margin" in rendered
+    assert "return_on_equity" in rendered
+    assert "net_profit_margin" in rendered
+
+
+def test_the_second_turn_still_sees_values_when_one_name_is_wrong(synthetic_store):
+    """End to end, not just at the render layer."""
+    client = ScriptedLLM(["TOOL: gross_margin, bogus_metric", GOOD])
+    AnalystAgent(client, synthetic_store).analyse("TST")
+    second_user = client.calls[1].user
+    assert "44.0%" in second_user
+    assert "bogus_metric" in second_user
+
+
 def test_analyst_refuses_an_empty_store():
     empty = MetricStore(data={}, tickers=())
     with pytest.raises(ValueError, match="Stage 1 metrics are empty"):
