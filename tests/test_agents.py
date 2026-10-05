@@ -153,6 +153,33 @@ def test_a_complete_reply_records_no_truncation(monkeypatch):
     )
     assert client.complete(system="s", user="u") == "All done."
     assert client.truncated == []
+    # Recorded on every call, not only truncated ones, so a run's log can say
+    # *why* a reply ended rather than only that something was wrong.
+    assert client.last_finish_reason == "stop"
+
+
+def test_a_response_without_a_finish_reason_is_tolerated():
+    """The field is the SDK's to change; a missing optional one must not crash.
+
+    Confirmed against the live SDK (3.24.0), which does return it -- so this is
+    tolerance for a shape change, not a workaround for an observed absence.
+    """
+    from financial_analyst.agents.providers.openai_client import OpenAIClient
+
+    client = OpenAIClient(config=ProviderConfig())
+    bare = SimpleNamespace(
+        choices=[
+            SimpleNamespace(message=SimpleNamespace(content="hi"), finish_reason=None)
+        ]
+    )
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=lambda **kwargs: bare)
+        )
+    )
+    assert client.complete(system="s", user="u") == "hi"
+    assert client.last_finish_reason is None
+    assert client.truncated == []
 
 
 def test_an_empty_reply_carries_its_finish_reason():

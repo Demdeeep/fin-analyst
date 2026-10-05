@@ -86,6 +86,7 @@ class OpenAIClient:
             )
 
         text = content.strip()
+        self.last_finish_reason = finish_reason
 
         # Truncation is reported, not raised. A reply cut off at the token limit
         # arrives as well-formed prose that happens to stop mid-thought, and the
@@ -95,6 +96,5 @@ class OpenAIClient:
         # record that this reply is not trustworthy.
         if finish_reason == "length":
             self.truncated.append(text)
-            self.last_finish_reason = finish_reason
 
         return text
