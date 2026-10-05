@@ -220,16 +220,61 @@ Not verified: the OpenAI adapter has never made a real call, and the model's
 judgement on whether prose is *adequate* has never been exercised against real
 output. Everything mechanical around it has been.
 
-## Later stages
+## Stage 4 (built) — cross-company comparison
 
 - **Stage 3** — retrieval over filings for the figures a CSV lacks (segment
   detail, footnotes, management discussion).
-- **Stage 4** — cross-company comparison and peer-relative metrics, which needs
-  the `sector` column the sample data already carries.
 
-## Later stages
+### Peer arithmetic is ours, not the model's
 
-- **Stage 3** — retrieval over filings for the figures a CSV lacks (segment
-  detail, footnotes, management discussion).
-- **Stage 4** — cross-company comparison and peer-relative metrics, which needs
-  the `sector` column the sample data already carries.
+Stage 2's rule was that an agent may only cite figures Stage 1 computed. Peer
+comparison breaks that rule — a gap-to-median appears in no company's metrics
+row — so the arithmetic moved into `agents/peers.py` and the model writes prose
+about figures it did not produce. The same bargain as the critic.
+
+That matters more here than anywhere else. Asked to compute a gap itself, a model
+produces a plausible one regardless of whether the peer group is big enough for a
+median to mean anything.
+
+### Refusing is the interesting behaviour
+
+A peer comparison that always emits a number is worse than none: "rank 1 of 2"
+reads as a finding and is not one. So every `PeerComparison` carries its group
+size, and `MIN_PEERS_FOR_COMPARISON` (3) gates everything:
+
+- **Group too small** → declined, with the reason recorded. A sector group under
+  the minimum falls back to the whole sample, and `group.scope` records that it
+  did — so a reader can tell "top of two rivals" from "top of forty".
+- **Metric undefined for the company** → declined, never compared as zero.
+- **Peers lacking the metric** → excluded from the median, not zeroed. Reading
+  an undefined ROE as `0` would pull a median down and manufacture a finding.
+- **Metric that is not a Stage 1 output column** → refused.
+
+Ranking is direction-aware: `debt_to_assets` at rank 1 means *least* levered, so
+a descending sort would crown the most indebted company. A `neutral` metric gets
+no rank at all — being top of a table with no good direction is not an achievement.
+
+The prompt states that a "not comparable" row is a deliberate refusal the agent
+must report as such, and requires the group to be named, so a sample-wide
+comparison is never read as a sector one.
+
+### Figures, and the limit of checking them
+
+Peer-derived figures (values, medians, gaps) reach the verifier through
+`extra_values`, so an invented gap is caught exactly as an invented margin is.
+`peer_values()` carries only figures a comparison actually produced, so a gap
+drawn from a declined group gains no authority.
+
+One limit is documented rather than worked around: `extract_claims` only extracts
+**unit-bearing** figures (`%`, `pp`, `x`, `$M`), because bare integers are far
+more often years than measurements. A gap written as "0.15 above the median" is
+therefore *not* checked at all. The prompt requires units, and
+`test_a_bare_decimal_gap_is_not_checked_at_all` pins the limitation in place so a
+future change to it is deliberate.
+
+### Sample data caveat
+
+No sector in the sample data reaches three companies (Technology has 2, the rest
+1), so **every company falls back to the sample group** and Stage 4 currently
+produces sample-wide comparisons only. The sector path is exercised by
+`big_store` in the tests, not by the shipped data.

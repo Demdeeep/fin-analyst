@@ -63,6 +63,18 @@ ADVISORY_SEVERITIES = ("warning",)
 #: Never required to be addressed. Informational provenance notes.
 OPTIONAL_SEVERITIES = ("info",)
 
+# ---------------------------------------------------------------------------
+# Peer comparison (Stage 4)
+# ---------------------------------------------------------------------------
+#: A peer group smaller than this cannot support a comparison. The median of two
+#: companies is not a median, and "rank 1 of 2" is not evidence of anything, so
+#: the comparison is declined and the reason recorded rather than a number
+#: produced that merely looks statistical.
+MIN_PEERS_FOR_COMPARISON = 3
+
+PEER_SCOPE_SECTOR = "sector"
+PEER_SCOPE_SAMPLE = "sample"
+
 __all__ = [
     "PROJECT_ROOT",
     "DATA_DIR",
@@ -86,4 +98,7 @@ __all__ = [
     "MUST_ADDRESS_SEVERITIES",
     "ADVISORY_SEVERITIES",
     "OPTIONAL_SEVERITIES",
+    "MIN_PEERS_FOR_COMPARISON",
+    "PEER_SCOPE_SECTOR",
+    "PEER_SCOPE_SAMPLE",
 ]

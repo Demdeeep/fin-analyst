@@ -7,7 +7,13 @@ financials — ratio maths, anomaly detection, and a written report. No language
 model is involved. Running it twice on the same input produces byte-identical
 output, which is what lets the test suite use golden files as a regression net.
 
-Stages 2+ (LLM agents) are reserved but not built. See
+**Stages 2 and 4 are also built.** Stage 2 runs an analyst, a critic and a
+bounded orchestrator over Stage 1's artifacts, with every figure in the prose
+verified mechanically and every anomaly flag screened for coverage. Stage 4
+compares companies against their peers, computing medians, gaps and
+direction-aware ranks in code rather than in the model.
+
+Stage 3 (retrieval over filings) is the remaining planned stage. See
 [`docs/architecture.md`](docs/architecture.md).
 
 ## Quick start
@@ -33,7 +39,12 @@ Other entry points:
 ```bash
 .venv/bin/python -m financial_analyst.stages.stage1_static_csv --input other.csv
 .venv/bin/python -m financial_analyst.stages.stage1_static_csv --no-write
+.venv/bin/python -m financial_analyst.stages.stage2_agents
+.venv/bin/python -m financial_analyst.stages.stage4_peer_comparison
 ```
+
+Stages 2 and 4 default to the scripted stub provider, so they need no API key.
+Pass `--provider openai` (with `OPENAI_API_KEY` set) to use a real model.
 
 ## Tests
 
@@ -42,7 +53,7 @@ Other entry points:
 .venv/bin/python -m pytest --cov=financial_analyst --cov-report=term-missing
 ```
 
-404 tests, 97% coverage. The suite is layered deliberately:
+509 tests, 97% coverage. The suite is layered deliberately:
 
 | Layer | File | What it proves |
 |---|---|---|
@@ -54,6 +65,7 @@ Other entry points:
 | Property-based | `test_properties.py` | Arbitrary floats: every metric returns a finite float or `None` |
 | Real filings | `test_sanity_real_filings.py` | Definitions reproduce three real 10-Ks — Apple, Beyond Meat and Target — including filed EPS on the positive and negative side |
 | Golden files | `test_stage1_pipeline.py`, `test_summary.py` | Output is byte-identical to a reviewed snapshot |
+| Peer refusals | `test_peer_comparison.py` | Groups under 3 companies are declined with a reason; undefined metrics and peers are never read as zero; ranking is direction-aware |
 
 Regenerate the golden files **only when the change is intended**, and read the
 diff:

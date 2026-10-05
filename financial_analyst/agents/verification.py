@@ -144,10 +144,21 @@ def _tolerance(claim: Claim, raw_text: str) -> float:
 
 
 def check_figures(
-    narrative: str, store: MetricStore, ticker: str
+    narrative: str,
+    store: MetricStore,
+    ticker: str,
+    extra_values: Optional[tuple[float, ...]] = None,
 ) -> list[ClaimIssue]:
-    """Every figure in the narrative must reconcile with a Stage 1 value."""
-    known = store.all_numeric_values(ticker)
+    """Every figure in the narrative must reconcile with a Stage 1 value.
+
+    ``extra_values`` carries figures Stage 1 did not compute but that are still
+    legitimate -- peer medians and gaps-to-median from
+    :mod:`financial_analyst.agents.peers`, for instance. Without it a comparison
+    would be unverifiable by construction, since "6.5pp above the median" is a
+    real derived number that appears in no company's metrics row.
+    """
+    known = list(store.all_numeric_values(ticker))
+    known.extend(value for value in (extra_values or ()) if isinstance(value, (int, float)))
     if not known:
         return [ClaimIssue(
             kind="unverifiable_figure",
@@ -215,10 +226,18 @@ def check_undefined_not_numerified(
 
 
 def verify(
-    narrative: str, store: MetricStore, ticker: str, year: Optional[str] = None
+    narrative: str,
+    store: MetricStore,
+    ticker: str,
+    year: Optional[str] = None,
+    extra_values: Optional[tuple[float, ...]] = None,
 ) -> list[ClaimIssue]:
-    """Run every check. An empty list means the narrative is defensible."""
+    """Run every check. An empty list means the narrative is defensible.
+
+    Set ``extra_values`` when the narrative quotes derived figures -- peer
+    medians, gaps to median -- that Stage 1 did not compute for this company.
+    """
     return (
-        check_figures(narrative, store, ticker)
+        check_figures(narrative, store, ticker, extra_values=extra_values)
         + check_undefined_not_numerified(narrative, store, ticker, year)
     )

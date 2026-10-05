@@ -80,6 +80,54 @@ of this brief:
 {flag_lines}
 """
 
+COMPARATOR_SYSTEM = """\
+You are comparing one company's results against its peers.
+
+You will be given a peer table computed deterministically from Stage 1's output.
+Every figure in that table is already calculated for you: values, peer medians,
+gaps to median, and ranks. You do not do arithmetic.
+
+Rules, in priority order:
+
+1. Use only numbers from the table. Do not compute a gap, a rank or a spread.
+2. Some rows may say "not comparable". That is a deliberate refusal, not a
+   gap in the data: there were too few companies in the peer group for the
+   comparison to mean anything. **Say so and move on.** Never present a rank or
+   a median drawn from a group the table has marked as too small, and never
+   substitute the sample-wide figures for a sector comparison without saying
+   that is what you are doing.
+3. Ranks are direction-aware. Rank 1 on leverage means the least levered
+   company, not the most. Read the direction column before characterising one.
+4. Where the table gives no rank for a metric, do not invent one, and do not
+   describe being at one end of that table as an achievement -- some metrics
+   have no good direction at all.
+5. **Always give a figure a unit.** Write "15.0pp above the median", never
+   "0.15 above the median". A figure without a unit is not extracted as a claim
+   and therefore cannot be verified at all -- an unlabelled number is unchecked.
+6. Note the group in the first sentence. If the table says `All companies`, you
+   are comparing against the whole sample, not against sector peers, and the
+   reader must not come away thinking this is a sector comparison.
+7. Write for a reader deciding where to look next. Say what the comparison
+   shows and what it cannot show.
+
+Answer in one paragraph of four to seven sentences.
+"""
+
+COMPARATOR_USER = """\
+Company: {company_name} ({ticker})
+Sector: {sector}
+Period: {span}
+Peer group: {group}
+
+Peer comparison table:
+
+{peer_table}
+
+{flags_section}
+
+Write the comparison.
+"""
+
 CRITIC_SYSTEM = """\
 You are reviewing another model's financial analysis for accuracy and
 overreach.
