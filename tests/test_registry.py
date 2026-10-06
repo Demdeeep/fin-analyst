@@ -14,7 +14,7 @@ import pytest
 
 from financial_analyst.tools import calculations as calc
 from financial_analyst.tools import registry
-from financial_analyst.tools.metrics import METRIC_COLUMNS
+from financial_analyst.tools.metrics import COMPANY_COLUMNS, METRIC_COLUMNS, PERIOD_COLUMNS
 
 #: Metric columns that are raw derived quantities rather than ratios, and so are
 #: deliberately not catalogued with a direction.
@@ -22,6 +22,17 @@ CONTEXT_COLUMNS = {
     "total_debt", "net_debt", "nopat", "earnings_per_share",
     "book_value_per_share", "market_cap", "enterprise_value",
 }
+
+# Company-level and period-level output columns that are useful context for later
+# stages but are not directional metrics in the registry catalogue.
+NON_REGISTRY_OUTPUT_COLUMNS = {
+    "first_year", "last_year", "years_covered", "missing_years", "revenue_cagr",
+    "years_since_prior",
+}
+
+# Intentional name/shape differences between the generic registry catalogue and
+# the concrete Stage 1 output columns.
+REGISTRY_ONLY_METRICS = {"cagr", "earnings_per_share", "book_value_per_share"}
 
 VALID_DIRECTIONS = {
     registry.HIGHER_IS_BETTER, registry.LOWER_IS_BETTER, registry.NEUTRAL,
@@ -63,6 +74,17 @@ def test_every_emitted_ratio_is_catalogued():
     """The catalogue must describe the output the pipeline actually produces."""
     uncatalogued = set(METRIC_COLUMNS) - set(registry.METRICS) - CONTEXT_COLUMNS
     assert not uncatalogued, f"metrics emitted but not catalogued: {sorted(uncatalogued)}"
+
+
+def test_every_catalogued_metric_is_emitted_or_explicitly_context_only():
+    """The registry must not describe metrics Stage 1 never produces.
+
+    Some catalogued metrics live outside ``METRIC_COLUMNS`` because they are
+    emitted in the company-summary or period-summary sections instead.
+    """
+    emitted = set(METRIC_COLUMNS) | set(COMPANY_COLUMNS) | set(PERIOD_COLUMNS)
+    extra = set(registry.METRICS) - emitted
+    assert extra == {"cagr"}
 
 
 def test_catalogued_functions_live_in_calculations():
@@ -114,3 +136,14 @@ def test_catalogue_matches_the_calculations_module():
     """Sanity check that the two modules have not drifted apart."""
     assert registry.get("cagr").function is calc.cagr
     assert registry.get("free_cash_flow") if "free_cash_flow" in registry.METRICS else True
+
+
+def test_metric_frame_columns_have_registry_entries_for_agent_visible_metrics():
+    """Columns exposed to later stages must stay described for agent use.
+
+    Raw derived context columns are exempt because they are supporting values,
+    not directional metrics.
+    """
+    emitted = set(METRIC_COLUMNS) | set(COMPANY_COLUMNS) | set(PERIOD_COLUMNS)
+    agent_visible = emitted - CONTEXT_COLUMNS - NON_REGISTRY_OUTPUT_COLUMNS
+    assert agent_visible | REGISTRY_ONLY_METRICS == set(registry.METRICS)

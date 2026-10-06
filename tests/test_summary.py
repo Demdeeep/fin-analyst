@@ -110,6 +110,49 @@ def test_undefined_values_render_as_na(report):
     assert "n/a" in report
 
 
+def test_report_renders_declined_surfaced_metrics_as_na():
+    """A surfaced metric that is undefined must render as ``n/a`` in prose.
+
+    This pins the contract at the report layer: once Stage 1 declines a metric,
+    the narrative must not leak ``None`` or invent a stand-in number.
+    """
+    import pandas as pd
+
+    metrics = pd.DataFrame([
+        {
+            "ticker": "TEST",
+            "company_name": "Test Co",
+            "sector": "Tech",
+            "fiscal_year": 2024,
+            "first_year": 2024,
+            "last_year": 2024,
+            "years_covered": 1,
+            "revenue": 1000.0,
+            "revenue_cagr": None,
+            "net_margin": 0.10,
+            "gross_margin": 0.40,
+            "operating_margin": 0.15,
+            "ebitda_margin": 0.20,
+            "return_on_equity": None,
+            "free_cash_flow": 50.0,
+            "debt_to_assets": 0.30,
+            "debt_to_equity": None,
+            "interest_coverage": None,
+            "net_debt_to_ebitda": None,
+            "current_ratio": 2.0,
+            "working_capital": 100.0,
+        }
+    ])
+
+    rendered = render_report(metrics, [], source_name="one.csv")
+
+    assert "ROE n/a" in rendered
+    assert "debt/equity n/a" in rendered
+    assert "interest coverage n/a" in rendered
+    assert "net debt/EBITDA n/a" in rendered
+    assert "None" not in rendered
+
+
 # ---------------------------------------------------------------------------
 # No conclusions
 # ---------------------------------------------------------------------------

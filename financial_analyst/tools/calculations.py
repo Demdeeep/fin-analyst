@@ -414,11 +414,20 @@ def current_ratio(
 def quick_ratio(
     current_assets: object, inventory: object, current_liabilities: object
 ) -> Optional[float]:
-    """(Current assets - inventory) / current liabilities -- the acid test."""
+    """(Current assets - inventory) / current liabilities -- the acid test.
+
+    Undefined when inventory exceeds current assets. A negative quick ratio is
+    mathematically possible if the inputs are inconsistent or heavily restated,
+    but it is not a meaningful liquidity measure and would read like one once it
+    lands in a prompt or report.
+    """
     ca, cl = _num(current_assets), _num(current_liabilities)
     if ca is None or cl is None:
         return None
-    return _ratio(_sub(ca, inventory), cl)
+    quick_assets = _sub(ca, inventory)
+    if quick_assets is None or quick_assets < 0.0:
+        return None
+    return _ratio(quick_assets, cl)
 
 
 def cash_ratio(cash: object, current_liabilities: object) -> Optional[float]:

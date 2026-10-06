@@ -306,6 +306,7 @@ def test_liquidity_ratios():
     assert calc.current_ratio(200, 0) is None
     assert calc.quick_ratio(200, 50, 100) == pytest.approx(1.5)
     assert calc.quick_ratio(200, None, 100) is None
+    assert calc.quick_ratio(50, 80, 100) is None
     assert calc.cash_ratio(100, 200) == pytest.approx(0.5)
     assert calc.working_capital(200, 100) == pytest.approx(100)
     assert calc.working_capital(200, None) is None
