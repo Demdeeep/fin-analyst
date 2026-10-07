@@ -165,6 +165,45 @@ def test_json_safe_covers_numpy_and_missing_values():
     assert stage1._json_safe(True) is True
 
 
+def test_json_safe_returns_none_for_non_numeric_objects():
+    class Unfloatable:
+        pass
+
+    assert stage1._json_safe(Unfloatable()) is None
+
+
+def test_cli_write_mode_prints_derived_and_written_artifacts(capsys, tmp_path, monkeypatch):
+    output_dir = stage1.config.PROJECT_ROOT / "outputs" / "_pytest_cli_write_mode"
+
+    class DummyResult:
+        def __init__(self):
+            self.dataset = type("Dataset", (), {"tickers": ("AAA",), "imputed_columns": ("free_cash_flow",)})()
+            self.metrics = pd.DataFrame([{"ticker": "AAA", "fiscal_year": 2024}])
+            self.flags = []
+            self.report = "# report\n"
+            self.written = {
+                "metrics_csv": output_dir / "company_metrics.csv",
+                "metrics_json": output_dir / "stage1_metrics.json",
+                "report_md": output_dir / "stage1_report.md",
+                "flags_csv": output_dir / "stage1_flags.csv",
+            }
+
+    def fake_run_stage1(input_csv, write, output_dir=None):
+        assert write is True
+        return DummyResult()
+
+    monkeypatch.setattr(stage1, "run_stage1", fake_run_stage1)
+    exit_code = stage1.main(["--input", str(tmp_path / "input.csv")])
+    assert exit_code == 0
+
+    output = capsys.readouterr().out
+    assert "derived   : free_cash_flow" in output
+    assert "wrote metrics_csv" in output
+    assert "wrote metrics_json" in output
+    assert "wrote report_md" in output
+    assert "wrote flags_csv" in output
+
+
 # ---------------------------------------------------------------------------
 # Golden files
 # ---------------------------------------------------------------------------

@@ -14,8 +14,9 @@ import re
 import pytest
 
 from financial_analyst import config
+from financial_analyst.tools import anomalies as an
 from financial_analyst.reporting import templates as tpl
-from financial_analyst.reporting.summary import _StrictContext, render_report
+from financial_analyst.reporting.summary import _StrictContext, _flag_icon, _num, render_report
 
 FIXTURE = "tests/fixtures/expected_summary.md"
 
@@ -103,6 +104,16 @@ def test_no_python_repr_leaks_into_the_prose(report):
     assert "None" not in report
     for junk in ("nan", "NaN", "NaT", "inf", "Infinity"):
         assert not contains_word(report, junk), f"{junk!r} leaked into the report"
+
+
+def test_summary_num_helper_refuses_non_numeric_values():
+    assert _num(None) is None
+    assert _num("abc") is None
+
+
+def test_flag_icon_falls_back_to_info_for_unknown_severities():
+    weird = [an.Flag(ticker="AAA", rule="odd", severity="mystery", message="?")]
+    assert _flag_icon(weird) == "🔵"
 
 
 def test_undefined_values_render_as_na(report):
