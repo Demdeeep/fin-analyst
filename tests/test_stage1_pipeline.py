@@ -133,6 +133,20 @@ def test_json_uses_null_for_undefined_metrics(result):
     assert payload["INIT"]["2022"]["price_to_earnings"] is None
 
 
+def test_json_uses_null_for_declined_quick_ratio():
+    metrics = pd.DataFrame([
+        {
+            "ticker": "QCK",
+            "fiscal_year": 2024,
+            "quick_ratio": None,
+            "current_ratio": 0.5,
+        }
+    ])
+    payload = stage1.metrics_to_nested_json(metrics)
+    assert payload["QCK"]["2024"]["quick_ratio"] is None
+    assert payload["QCK"]["2024"]["current_ratio"] == pytest.approx(0.5)
+
+
 def test_json_round_trips_through_disk(tmp_path, sample_csv):
     written = stage1.run_stage1(sample_csv, write=True, output_dir=tmp_path).written
     loaded = json.loads(written["metrics_json"].read_text())

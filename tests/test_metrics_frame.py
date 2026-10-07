@@ -104,6 +104,25 @@ def test_undefined_metrics_are_blank_not_nan_strings(healthy_context):
         assert not rendered.isin({"nan", "none", "null"}).any(), column
 
 
+def test_quick_ratio_is_none_when_inventory_exceeds_current_assets():
+    """The dataframe layer must preserve the liquidity guard from calculations.
+
+    A row whose inventory exceeds current assets would otherwise emit a negative
+    quick ratio, which reads like a real liquidity measurement rather than an
+    undefined one.
+    """
+    row = make_row(
+        ticker="QCK",
+        company_name="Quick Assets Test",
+        total_current_assets=50.0,
+        inventory=80.0,
+        total_current_liabilities=100.0,
+    )
+    frame = compute_metric_frame(pd.DataFrame([row]))
+    assert pd.isna(frame.iloc[0]["quick_ratio"])
+    assert frame.iloc[0]["current_ratio"] == pytest.approx(0.5)
+
+
 def test_healthy_fixture_really_is_healthy(healthy_context):
     """Guards the fixture itself: if this breaks, the negative tests lie."""
     from financial_analyst.tools import anomalies as an
