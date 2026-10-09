@@ -65,6 +65,15 @@ Metric values you requested:
 
 Write the analysis. Three to six sentences. Every figure must come from the
 values above or from the flags.
+
+If any critical flags were shown, structure the response like this:
+1. One lead sentence on the overall situation.
+2. Then one sentence that explicitly names every critical flag you are relying on
+   by rule id. Use the rule ids exactly as written in the flags block.
+3. If a critical flag cannot be addressed from the available Stage 1 values, say
+   that plainly and name the flag anyway; do not omit it.
+
+Do not replace rule ids with paraphrases when discussing critical flags.
 """
 
 ANALYST_FLAGS_NONE = """\

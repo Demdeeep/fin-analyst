@@ -101,12 +101,24 @@ class Orchestrator:
         revisions = 0
 
         while verdict.verdict == REVISE and revisions < self.max_revisions:
+            unresolved = [
+                f"{item.flag.rule} {item.flag.year_label}"
+                for item in verdict.coverage
+                if item.needs_review and item.flag.must_address
+            ]
+            revision_note = (
+                "(previous attempt was rejected: "
+                f"{verdict.verdict} -- {verdict.notes or 'unsupported claim'})"
+            )
+            if unresolved:
+                revision_note += (
+                    " Must address these flags by rule id in the revision: "
+                    + ", ".join(unresolved)
+                    + ". If one cannot be resolved from Stage 1's values, say that plainly rather than omitting it."
+                )
             analyst_result = self.analyst.analyse(
                 ticker,
-                flags=list(flags) + [
-                    f"(previous attempt was rejected: {verdict.verdict} -- "
-                    f"{verdict.notes or 'unsupported claim'})"
-                ],
+                flags=list(flags) + [revision_note],
             )
             verdict = self.critic.review(
                 ticker, analyst_result.narrative, flags=flags
