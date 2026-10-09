@@ -183,6 +183,7 @@ class CriticAgent:
                 ]
 
         verdict = _derive_verdict(issues, unresolved)
+        summary = _code_checked_summary(issues, unresolved)
 
         # General judgement on the prose, when the flag round did not already use
         # the model. Gating on `screened` here would silently skip prose review
@@ -202,11 +203,14 @@ class CriticAgent:
             )
             parsed, general_notes = _parse_verdict(reply)
             if parsed is not None:
-                if not issues:
-                    verdict = parsed
-                elif verdict == OK:
+                # The general model reply may add notes and may soften an OK to
+                # REVISE, but it must not escalate to REJECT on its own. Only
+                # code-checked findings (numerified_undefined or unresolved
+                # must-address flags) may do that.
+                if parsed == REVISE and verdict == OK:
                     verdict = REVISE
-                notes.append(general_notes)
+                if general_notes:
+                    notes.append(general_notes)
             else:
                 notes.append(
                     "critic model returned no usable verdict; mechanically "
@@ -214,6 +218,9 @@ class CriticAgent:
                 )
         elif not self.consult_model:
             notes.append("mechanical checks only; not model-reviewed")
+
+        if summary:
+            notes.insert(0, summary)
 
         return CriticVerdict(
             ticker=ticker,
@@ -262,6 +269,16 @@ def _render_coverage_counts(screened) -> str:
         f"referenced in the analysis, {counts[cov.LOOKS_UNADDRESSED] + counts[cov.UNCLEAR]} "
         "were not detectably engaged with."
     )
+
+
+def _code_checked_summary(issues, unresolved) -> str:
+    if any(issue.kind == "numerified_undefined" for issue in issues):
+        return "a metric Stage 1 declined to compute was given a number"
+    if unresolved:
+        return f"{len(unresolved)} must-address flag(s) remain unresolved after screening"
+    if issues:
+        return f"{len(issues)} figure(s) did not reconcile with Stage 1"
+    return ""
 
 
 def _derive_verdict(issues, unresolved) -> str:

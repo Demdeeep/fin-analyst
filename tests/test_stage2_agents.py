@@ -66,6 +66,8 @@ def test_analyst_prompt_carries_the_catalogue_and_the_flags(synthetic_store):
     assert "`gross_margin`" in system and "higher_is_better" in system
     assert "low_interest_coverage" in first_user
     assert "44.0%" in second_user          # the observation reached the model
+    assert "explicitly names every critical flag" in second_user
+    assert "Use the rule ids exactly as written" in second_user
 
 
 def test_analyst_reports_a_hallucinated_tool_name(synthetic_store):
@@ -140,6 +142,23 @@ def test_numerified_undefined_is_rejected_outright(synthetic_store):
     )
     assert verdict.verdict == REJECT
     assert "declined to compute" in verdict.notes
+
+
+def test_general_model_reply_cannot_force_reject_without_code_checked_findings(synthetic_store):
+    verdict = CriticAgent(ScriptedLLM(["REJECT\nbuilt on nothing"]), synthetic_store).review(
+        "TST", GOOD
+    )
+    assert verdict.verdict == OK
+    assert verdict.issues == ()
+
+
+def test_critic_notes_start_with_code_checked_summary(synthetic_store):
+    verdict = CriticAgent(ScriptedLLM(["REJECT\nbuilt on nothing"]), synthetic_store).review(
+        "TST", BAD_NUMBER
+    )
+    assert verdict.verdict == REVISE
+    assert verdict.notes.startswith("2 figure(s) did not reconcile with Stage 1") or \
+        verdict.notes.startswith("1 figure(s) did not reconcile with Stage 1")
 
 
 def test_unparseable_reply_does_not_manufacture_a_revision(synthetic_store):
@@ -289,6 +308,88 @@ def test_stage2_passes_flags_into_the_prompt(staged):
     assert result.flags_considered == 1
 
 
+def test_retry_prompt_names_unresolved_must_address_flags_by_rule_id(synthetic_store, monkeypatch):
+    from financial_analyst.agents.flags import FlagRef
+    from financial_analyst.agents.critic import CriticVerdict, REVISE, OK
+    from financial_analyst.agents.coverage import CoverageIssue, LOOKS_UNADDRESSED
+    from financial_analyst.agents.analyst import AnalystResult
+
+    flags = (
+        FlagRef(
+            ticker="LOSS",
+            fiscal_year=2024,
+            rule="low_interest_coverage",
+            severity="critical",
+            message="coverage 0.36x",
+            value=0.36,
+        ),
+        FlagRef(
+            ticker="LOSS",
+            fiscal_year=2024,
+            rule="high_debt_to_equity",
+            severity="critical",
+            message="debt/equity 2.7x",
+            value=2.7,
+        ),
+    )
+
+    class RecordingAnalyst:
+        def __init__(self):
+            self.calls = []
+
+        def analyse(self, ticker, flags=(), year=None):
+            self.calls.append((ticker, list(flags), year))
+            return AnalystResult(
+                ticker=ticker,
+                narrative="stub narrative",
+                observation=type("Obs", (), {"requested": (), "values": {}, "render": lambda self: ""})(),
+                first_turn="TOOL: revenue",
+            )
+
+    class SequencedCritic:
+        def __init__(self):
+            self.calls = 0
+
+        def review(self, ticker, narrative, flags=()):
+            self.calls += 1
+            if self.calls == 1:
+                return CriticVerdict(
+                    ticker=ticker,
+                    verdict=REVISE,
+                    issues=(),
+                    coverage=(
+                        CoverageIssue(flags[0], LOOKS_UNADDRESSED, "missing"),
+                        CoverageIssue(flags[1], LOOKS_UNADDRESSED, "missing"),
+                    ),
+                    notes="Address the missing critical flags.",
+                    retryable=True,
+                    flags_considered=2,
+                    flags_addressed=0,
+                )
+            return CriticVerdict(
+                ticker=ticker,
+                verdict=OK,
+                issues=(),
+                coverage=(),
+                notes="",
+                retryable=True,
+                flags_considered=2,
+                flags_addressed=2,
+            )
+
+    orchestrator = Orchestrator(ScriptedLLM([]), synthetic_store)
+    orchestrator.analyst = RecordingAnalyst()
+    orchestrator.critic = SequencedCritic()
+
+    result = orchestrator.run("LOSS", flags=flags)
+    retry_flags = orchestrator.analyst.calls[1][1]
+    retry_note = retry_flags[-1]
+    assert "Must address these flags by rule id" in retry_note
+    assert "low_interest_coverage FY2024" in retry_note
+    assert "high_debt_to_equity FY2024" in retry_note
+    assert result.revisions == 1
+
+
 def test_the_orchestrator_refuses_rendered_flag_strings(staged):
     """A bare AttributeError would send someone hunting the wrong bug."""
     metrics, flags = staged
@@ -321,3 +422,39 @@ def test_stage2_refuses_to_run_before_stage_1(tmp_path):
 def test_flags_absent_is_not_fatal(tmp_path):
     """No flags file means no flags, not a crash."""
     assert stage2.load_flags(tmp_path / "nope.csv") == {}
+
+
+def test_verbose_cli_prints_findings(capsys, monkeypatch):
+    from financial_analyst.agents.coverage import CoverageIssue, LOOKS_UNADDRESSED
+    from financial_analyst.agents.flags import FlagRef
+    from financial_analyst.agents.orchestrator import Stage2Result
+
+    flag = FlagRef(
+        ticker="LOSS",
+        fiscal_year=2024,
+        rule="low_interest_coverage",
+        severity="critical",
+        message="coverage 0.36x",
+        value=0.36,
+    )
+    result = Stage2Result(
+        ticker="LOSS",
+        narrative="narrative",
+        verdict=REVISE,
+        issues=("issue text",),
+        coverage=(CoverageIssue(flag, LOOKS_UNADDRESSED, "missing"),),
+        revisions=1,
+        critic_notes="note",
+        flags_considered=1,
+        flags_addressed=0,
+    )
+    monkeypatch.setattr(stage2, "run_stage2", lambda **kwargs: [result])
+    stage2.main(["--no-write", "--verbose", "--ticker", "LOSS"])
+    out = capsys.readouterr().out
+    assert "narrative:" in out
+    assert "narrative" in out
+    assert "issues:" in out
+    assert "issue text" in out
+    assert "unaddressed_flags:" in out
+    assert "low_interest_coverage" in out
+    assert "critic_notes: note" in out

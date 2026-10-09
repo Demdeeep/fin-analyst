@@ -38,7 +38,7 @@ from .tools import MetricStore
 # a verifier that cries wolf gets ignored.
 PERCENT = re.compile(r"(?<![\w.])(?P<sign>[+-]?)(?P<value>\d+(?:\.\d+)?)\s*%")
 POINTS = re.compile(r"(?<![\w.])(?P<sign>[+-]?)(?P<value>\d+(?:\.\d+)?)\s*pp\b")
-MULTIPLE = re.compile(r"(?<![\w.])(?P<value>\d+(?:\.\d+)?)x\b")
+MULTIPLE = re.compile(r"(?<![\w.])(?P<sign>[+-]?)(?P<value>\d+(?:\.\d+)?)x\b")
 MONEY = re.compile(r"\$(?P<value>\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*M\b")
 
 #: Phrases that indicate a metric is being discussed, for the undefined check.
@@ -98,24 +98,27 @@ def extract_claims(text: str, ticker: str = "") -> list[Claim]:
     claims: list[Claim] = []
 
     for match in PERCENT.finditer(text):
+        sign = -1.0 if match.group("sign") == "-" else 1.0
         claims.append(Claim(
             text=match.group(0).strip(),
-            value=float(match.group("value")) / 100.0,
+            value=sign * float(match.group("value")) / 100.0,
             kind="percent",
             ticker=ticker,
         ))
 
     for match in POINTS.finditer(text):
+        sign = -1.0 if match.group("sign") == "-" else 1.0
         claims.append(Claim(
             text=match.group(0).strip(),
-            value=float(match.group("value")) / 100.0,
+            value=sign * float(match.group("value")) / 100.0,
             kind="points",
             ticker=ticker,
         ))
 
     for match in MULTIPLE.finditer(text):
+        sign = -1.0 if match.group("sign") == "-" else 1.0
         claims.append(Claim(
-            text=f"{match.group('value')}x", value=float(match.group("value")),
+            text=match.group(0).strip(), value=sign * float(match.group("value")),
             kind="multiple", ticker=ticker,
         ))
 

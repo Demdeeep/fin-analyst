@@ -115,7 +115,8 @@ def _make_response(content, finish_reason="stop"):
     """
     message = SimpleNamespace(content=content)
     choice = SimpleNamespace(message=message, finish_reason=finish_reason)
-    return SimpleNamespace(choices=[choice])
+    usage = SimpleNamespace(prompt_tokens=11, completion_tokens=7, total_tokens=18)
+    return SimpleNamespace(choices=[choice], usage=usage)
 
 
 def test_a_truncated_reply_is_recorded_not_raised(monkeypatch):
@@ -180,6 +181,36 @@ def test_a_response_without_a_finish_reason_is_tolerated():
     assert client.complete(system="s", user="u") == "hi"
     assert client.last_finish_reason is None
     assert client.truncated == []
+
+
+def test_usage_is_captured_when_the_sdk_returns_it(monkeypatch):
+    from financial_analyst.agents.providers.openai_client import OpenAIClient
+
+    client = OpenAIClient(config=ProviderConfig())
+    monkeypatch.setattr(client, "_sdk", lambda: SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **_: _make_response("hi")))
+    ))
+
+    assert client.complete(system="s", user="u") == "hi"
+    assert client.last_usage == {
+        "input_tokens": 11,
+        "output_tokens": 7,
+        "total_tokens": 18,
+    }
+
+
+def test_missing_usage_is_tolerated(monkeypatch):
+    from financial_analyst.agents.providers.openai_client import OpenAIClient
+
+    client = OpenAIClient(config=ProviderConfig())
+    monkeypatch.setattr(client, "_sdk", lambda: SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **_: SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="hi"), finish_reason="stop")]
+        )))
+    ))
+
+    assert client.complete(system="s", user="u") == "hi"
+    assert client.last_usage is None
 
 
 def test_an_empty_reply_carries_its_finish_reason():
@@ -471,4 +502,17 @@ def test_percentage_points_are_normalised_like_stage1(synthetic_store):
     claims = verification.extract_claims("Margin rose 2.8pp.")
     assert claims[0].kind == "points"
     assert claims[0].value == pytest.approx(0.028)
+
+
+def test_negative_percent_and_multiple_keep_their_sign(synthetic_store):
+    claims = verification.extract_claims("Net margin was -3.6% and interest coverage was -2.01x.")
+    assert [(claim.text, claim.value, claim.kind) for claim in claims] == [
+        ("-3.6%", pytest.approx(-0.036), "percent"),
+        ("-2.01x", pytest.approx(-2.01), "multiple"),
+    ]
+
+
+def test_real_negative_stage1_values_reconcile(synthetic_store):
+    prose = "Net margin was -3.6% and interest coverage was 0.36x."
+    assert verification.verify(prose, synthetic_store, "LOSS") == []
 

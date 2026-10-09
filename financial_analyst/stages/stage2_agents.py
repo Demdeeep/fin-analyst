@@ -158,6 +158,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--no-critic-model", action="store_true",
                         help="rely on the mechanical check only")
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument("--verbose", action="store_true",
+                        help="print critic findings and unresolved flags")
     parser.add_argument("--dotenv", default=None,
                         help="path to a .env file holding OPENAI_API_KEY")
     arguments = parser.parse_args(argv)
@@ -183,6 +185,20 @@ def main(argv: Optional[list[str]] = None) -> int:
             f"{result.ticker:6} {result.verdict:6} "
             f"verified={result.verified} revisions={result.revisions}"
         )
+        if arguments.verbose:
+            print("  narrative:")
+            print(f"  {result.narrative}")
+            if result.issues:
+                print("  issues:")
+                for issue in result.issues:
+                    print(f"  - {issue}")
+            unresolved = [item for item in result.coverage if item.needs_review]
+            if unresolved:
+                print("  unaddressed_flags:")
+                for item in unresolved:
+                    print(f"  - {item}")
+            if result.critic_notes:
+                print(f"  critic_notes: {result.critic_notes}")
     return 0
 
 

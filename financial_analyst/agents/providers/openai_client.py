@@ -30,6 +30,9 @@ class OpenAIClient:
         self.truncated: list[str] = []
         #: The ``finish_reason`` of the most recent call, for diagnostics.
         self.last_finish_reason: Optional[str] = None
+        #: Token-usage metadata from the most recent call, when the SDK returns it.
+        #: Stored as a plain dict so callers and tests do not depend on SDK types.
+        self.last_usage: Optional[dict[str, int]] = None
 
     # -- lazily built so importing this module needs no SDK ---------------
     def _sdk(self):
@@ -77,6 +80,7 @@ class OpenAIClient:
         choice = response.choices[0]
         content = choice.message.content
         finish_reason = getattr(choice, "finish_reason", None)
+        usage = getattr(response, "usage", None)
 
         if content is None:
             raise CompletionError(
@@ -87,6 +91,14 @@ class OpenAIClient:
 
         text = content.strip()
         self.last_finish_reason = finish_reason
+        if usage is None:
+            self.last_usage = None
+        else:
+            self.last_usage = {
+                "input_tokens": int(getattr(usage, "prompt_tokens", 0) or 0),
+                "output_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
+                "total_tokens": int(getattr(usage, "total_tokens", 0) or 0),
+            }
 
         # Truncation is reported, not raised. A reply cut off at the token limit
         # arrives as well-formed prose that happens to stop mid-thought, and the
