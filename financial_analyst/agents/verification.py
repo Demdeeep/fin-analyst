@@ -60,7 +60,18 @@ _METRIC_WORDS = {
     "debt/assets": "debt_to_assets",
     "current ratio": "current_ratio",
     "interest coverage": "interest_coverage",
+    "net_debt_to_ebitda": "net_debt_to_ebitda",
+    "debt_to_equity": "debt_to_equity",
+    "debt_to_assets": "debt_to_assets",
+    "current_ratio": "current_ratio",
+    "gross_margin": "gross_margin",
+    "net_margin": "net_margin",
+    "operating_margin": "operating_margin",
+    "return_on_equity": "return_on_equity",
+    "return_on_assets": "return_on_assets",
 }
+
+FISCAL_YEAR = re.compile(r"\bfy\s*(?P<year>20\d{2})\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -146,6 +157,31 @@ def _tolerance(claim: Claim, raw_text: str) -> float:
     return step / 100.0 if claim.kind in {"percent", "points"} else step
 
 
+def _mentioned_metric(sentence: str, claim_text: str, window: int = 40) -> Optional[str]:
+    lowered = sentence.lower()
+    claim_pos = lowered.find(claim_text.lower())
+    if claim_pos < 0:
+        return None
+    best: tuple[int, str] | None = None
+    for phrase, metric in _METRIC_WORDS.items():
+        start = 0
+        while True:
+            pos = lowered.find(phrase, start)
+            if pos < 0:
+                break
+            distance = claim_pos - (pos + len(phrase))
+            if 0 <= distance <= window:
+                if best is None or distance < best[0]:
+                    best = (distance, metric)
+            start = pos + 1
+    return best[1] if best is not None else None
+
+
+def _mentioned_year(sentence: str) -> Optional[str]:
+    match = FISCAL_YEAR.search(sentence or "")
+    return match.group("year") if match else None
+
+
 def check_figures(
     narrative: str,
     store: MetricStore,
@@ -172,19 +208,46 @@ def check_figures(
         )]
 
     issues: list[ClaimIssue] = []
-    for claim in extract_claims(narrative, ticker):
-        tolerance = _tolerance(claim, claim.text)
-        if any(abs(claim.value - value) <= tolerance for value in known):
-            continue
-        nearest = min(known, key=lambda value: abs(value - claim.value))
-        issues.append(ClaimIssue(
-            kind="unverifiable_figure",
-            detail=(
-                f"{claim.text!r} does not match any value Stage 1 computed for "
-                f"{ticker}; nearest was {nearest:.6g}"
-            ),
-            claim=claim,
-        ))
+    for sentence in re.split(r"(?<=[.!?])\s+", narrative or ""):
+        year = _mentioned_year(sentence)
+        for claim in extract_claims(sentence, ticker):
+            metric = _mentioned_metric(sentence, claim.text)
+            tolerance = _tolerance(claim, claim.text)
+            if metric is not None:
+                years = (year,) if year is not None else store.years(ticker)
+                targeted: list[float] = []
+                for candidate_year in years:
+                    value = store.value(ticker, candidate_year, metric)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        targeted.append(float(value))
+                if targeted:
+                    if any(abs(claim.value - value) <= tolerance for value in targeted):
+                        continue
+                    if any(abs(claim.value - value) <= tolerance for value in (extra_values or ())
+                           if isinstance(value, (int, float))):
+                        continue
+                    nearest = min(targeted, key=lambda value: abs(value - claim.value))
+                    issues.append(ClaimIssue(
+                        kind="unverifiable_figure",
+                        detail=(
+                            f"{claim.text!r} does not match {metric}"
+                            + (f" for FY{year}" if year is not None else "")
+                            + f"; nearest Stage 1 value was {nearest:.6g}"
+                        ),
+                        claim=claim,
+                    ))
+                    continue
+            if any(abs(claim.value - value) <= tolerance for value in known):
+                continue
+            nearest = min(known, key=lambda value: abs(value - claim.value))
+            issues.append(ClaimIssue(
+                kind="unverifiable_figure",
+                detail=(
+                    f"{claim.text!r} does not match any value Stage 1 computed for "
+                    f"{ticker}; nearest was {nearest:.6g}"
+                ),
+                claim=claim,
+            ))
     return issues
 
 

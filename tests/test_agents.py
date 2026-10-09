@@ -516,3 +516,28 @@ def test_real_negative_stage1_values_reconcile(synthetic_store):
     prose = "Net margin was -3.6% and interest coverage was 0.36x."
     assert verification.verify(prose, synthetic_store, "LOSS") == []
 
+
+def test_metric_and_year_named_value_must_match_that_specific_stage1_cell(store):
+    prose = "net_debt_to_ebitda for FY2023 was 3.8x."
+    issues = verification.verify(prose, store, "INIT")
+    assert any(issue.kind == "unverifiable_figure" for issue in issues)
+
+
+def test_nearest_preceding_metric_in_same_sentence_is_used(synthetic_store):
+    prose = "Gross margin is 44.0% and interest coverage 8.5x."
+    assert verification.verify(prose, synthetic_store, "TST") == []
+
+
+def test_real_negative_values_with_nearest_metric_binding_pass(synthetic_store):
+    prose = "Net margin was -3.6% and interest coverage was -0.84x."
+    store = synthetic_store
+    # Extend the synthetic store with a real negative interest coverage value for this check.
+    store.data["LOSS"]["2023"] = dict(store.data["LOSS"]["2024"])
+    store.data["LOSS"]["2023"]["interest_coverage"] = -0.84
+    assert verification.verify(prose, store, "LOSS", year="2023") == []
+
+
+def test_claim_with_no_nearby_metric_name_falls_back_to_any_value_check(synthetic_store):
+    prose = "The company reported 44.0% in the latest period."
+    assert verification.verify(prose, synthetic_store, "TST") == []
+

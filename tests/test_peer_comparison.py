@@ -261,6 +261,12 @@ def test_a_real_peer_gap_is_accepted_as_a_legitimate_figure(big_store):
                   extra_values=peer_values(result)) == []
 
 
+def test_a_made_up_peer_median_is_still_flagged(big_store):
+    narrative = "T1's gross margin is 15.0pp above the peer median of 0.99%."
+    issues = verify(narrative, big_store, "T1", extra_values=(0.6, 0.45, 0.15))
+    assert any(issue.kind == "unverifiable_figure" for issue in issues)
+
+
 def test_a_hallucinated_gap_is_still_caught(big_store):
     result = ComparatorAgent(ScriptedLLM(["ok"]), big_store,
                              metrics=("gross_margin",)).compare("T1")
