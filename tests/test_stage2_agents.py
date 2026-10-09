@@ -169,6 +169,14 @@ def test_model_critical_flag_count_is_stripped_from_notes(synthetic_store):
     assert "critical flags" in verdict.notes
 
 
+def test_model_only_revise_keeps_the_verdict_ok(synthetic_store):
+    verdict = CriticAgent(ScriptedLLM(["REVISE\ntoo thin"]), synthetic_store).review(
+        "TST", GOOD
+    )
+    assert verdict.verdict == OK
+    assert verdict.notes.startswith("model opinion only; no code-found issue")
+
+
 def test_critic_notes_start_with_code_checked_summary(synthetic_store):
     verdict = CriticAgent(ScriptedLLM(["REJECT\nbuilt on nothing"]), synthetic_store).review(
         "TST", BAD_NUMBER
