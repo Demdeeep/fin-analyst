@@ -153,6 +153,7 @@ class CriticAgent:
 
         notes: list[str] = []
         unresolved = list(cov.require_addressed(screened))
+        model_only = False
 
         # Ask the model about *only* the candidates whose severity matters, and
         # only when there is at least one. ACME has no flags, so this costs
@@ -209,6 +210,7 @@ class CriticAgent:
                 # must-address flags) may do that.
                 if parsed == REVISE and verdict == OK:
                     verdict = REVISE
+                    model_only = True
                 if general_notes:
                     notes.append(general_notes)
             else:
@@ -221,6 +223,8 @@ class CriticAgent:
 
         if summary:
             notes.insert(0, summary)
+        elif model_only:
+            notes.insert(0, "model opinion only; no code-found issue")
 
         return CriticVerdict(
             ticker=ticker,
@@ -230,8 +234,8 @@ class CriticAgent:
             notes="; ".join(note for note in notes if note),
             model_consulted=self.consult_model,
             # Always retryable by this point: the one non-retryable cause
-            # returned above. An unaddressed flag is exactly what a retry fixes.
-            retryable=True,
+            # returned above. A model-only opinion is explicitly not retried.
+            retryable=not model_only,
             flags_considered=len(screened),
             flags_addressed=counts[cov.ADDRESSED],
         )

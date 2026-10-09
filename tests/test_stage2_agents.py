@@ -152,6 +152,23 @@ def test_general_model_reply_cannot_force_reject_without_code_checked_findings(s
     assert verdict.issues == ()
 
 
+def test_model_only_revise_note_is_marked_as_model_opinion(synthetic_store):
+    verdict = CriticAgent(ScriptedLLM(["REVISE\ntoo thin"]), synthetic_store).review(
+        "TST", GOOD
+    )
+    assert verdict.verdict == REVISE
+    assert verdict.notes.startswith("model opinion only; no code-found issue")
+    assert verdict.retryable is False
+
+
+def test_model_critical_flag_count_is_stripped_from_notes(synthetic_store):
+    verdict = CriticAgent(ScriptedLLM(["REVISE\nfails to engage with 16 critical flags"]), synthetic_store).review(
+        "TST", GOOD
+    )
+    assert "16 critical flags" not in verdict.notes
+    assert "critical flags" in verdict.notes
+
+
 def test_critic_notes_start_with_code_checked_summary(synthetic_store):
     verdict = CriticAgent(ScriptedLLM(["REJECT\nbuilt on nothing"]), synthetic_store).review(
         "TST", BAD_NUMBER
@@ -237,6 +254,14 @@ def test_verified_is_about_figures_not_about_the_verdict(synthetic_store):
     result = Orchestrator(client, synthetic_store, max_revisions=0).run("TST")
     assert result.verdict == REVISE
     assert result.verified
+
+
+def test_model_only_revise_does_not_trigger_retry(synthetic_store):
+    client = ScriptedLLM(["TOOL: gross_margin", GOOD, "REVISE\ntoo thin"])
+    result = Orchestrator(client, synthetic_store, max_revisions=3).run("TST")
+    assert result.verdict == REVISE
+    assert result.revisions == 0
+    assert client.call_count == 3
 
 
 def test_provider_failure_propagates(synthetic_store):

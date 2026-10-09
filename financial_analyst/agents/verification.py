@@ -157,23 +157,35 @@ def _tolerance(claim: Claim, raw_text: str) -> float:
     return step / 100.0 if claim.kind in {"percent", "points"} else step
 
 
-def _mentioned_metric(sentence: str, claim_text: str, window: int = 40) -> Optional[str]:
+def _mentioned_metrics(sentence: str) -> list[tuple[int, int, str]]:
     lowered = sentence.lower()
-    claim_pos = lowered.find(claim_text.lower())
-    if claim_pos < 0:
-        return None
-    best: tuple[int, str] | None = None
+    found: list[tuple[int, int, str]] = []
     for phrase, metric in _METRIC_WORDS.items():
         start = 0
         while True:
             pos = lowered.find(phrase, start)
             if pos < 0:
                 break
-            distance = claim_pos - (pos + len(phrase))
-            if 0 <= distance <= window:
-                if best is None or distance < best[0]:
-                    best = (distance, metric)
+            found.append((pos, pos + len(phrase), metric))
             start = pos + 1
+    return found
+
+
+def _mentioned_metric(sentence: str, claim_text: str, window: int = 40) -> Optional[str]:
+    lowered = sentence.lower()
+    claim_pos = lowered.find(claim_text.lower())
+    if claim_pos < 0:
+        return None
+    metrics = _mentioned_metrics(sentence)
+    unique_metrics = {metric for _, _, metric in metrics}
+    if len(unique_metrics) == 1:
+        return next(iter(unique_metrics))
+    best: tuple[int, str] | None = None
+    for pos, end, metric in metrics:
+        distance = claim_pos - end
+        if 0 <= distance <= window:
+            if best is None or distance < best[0]:
+                best = (distance, metric)
     return best[1] if best is not None else None
 
 

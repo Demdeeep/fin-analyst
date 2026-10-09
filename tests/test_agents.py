@@ -523,6 +523,15 @@ def test_metric_and_year_named_value_must_match_that_specific_stage1_cell(store)
     assert any(issue.kind == "unverifiable_figure" for issue in issues)
 
 
+def test_single_metric_sentence_binds_all_figures_to_that_metric(store):
+    prose = (
+        "the high net_debt_to_ebitda flag for FY2023 indicates a concerning "
+        "level of debt relative to EBITDA at 3.8x."
+    )
+    issues = verification.verify(prose, store, "INIT")
+    assert any(issue.kind == "unverifiable_figure" for issue in issues)
+
+
 def test_nearest_preceding_metric_in_same_sentence_is_used(synthetic_store):
     prose = "Gross margin is 44.0% and interest coverage 8.5x."
     assert verification.verify(prose, synthetic_store, "TST") == []

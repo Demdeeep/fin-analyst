@@ -186,6 +186,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             f"verified={result.verified} revisions={result.revisions}"
         )
         if arguments.verbose:
+            debug_cause = (
+                "numerified_undefined" if any(getattr(issue, "kind", "") == "numerified_undefined" for issue in result.issues)
+                else "unresolved_flag" if any(item.needs_review and getattr(item.flag, "must_address", False) for item in result.coverage)
+                else "figure_issue" if result.issues
+                else "model_only" if result.verdict == "REVISE"
+                else "none"
+            )
+            print(f"  debug_first_verdict_cause: {debug_cause}")
             print("  narrative:")
             print(f"  {result.narrative}")
             if result.issues:
@@ -199,6 +207,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                     print(f"  - {item}")
             if result.critic_notes:
                 print(f"  critic_notes: {result.critic_notes}")
+            usage = getattr(getattr(getattr(stage2_agents := None, '__class__', None), '__name__', None), '__name__', None)
     return 0
 
 
