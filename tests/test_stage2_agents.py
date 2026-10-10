@@ -153,10 +153,16 @@ def test_general_model_reply_cannot_force_reject_without_code_checked_findings(s
 
 
 def test_model_only_revise_note_is_marked_as_model_opinion(synthetic_store):
+    """The model's REVISE is recorded, but it does not become the verdict.
+
+    Only a code-checked finding can move the verdict, so with clean figures the
+    result stays OK and the model's opinion travels as a note -- and, being an
+    opinion with nothing behind it, it is not retryable.
+    """
     verdict = CriticAgent(ScriptedLLM(["REVISE\ntoo thin"]), synthetic_store).review(
         "TST", GOOD
     )
-    assert verdict.verdict == REVISE
+    assert verdict.verdict == OK
     assert verdict.notes.startswith("model opinion only; no code-found issue")
     assert verdict.retryable is False
 
@@ -257,19 +263,32 @@ def test_a_hard_failure_is_not_retried(synthetic_store):
 
 
 def test_verified_is_about_figures_not_about_the_verdict(synthetic_store):
-    """A REVISE can still be figure-clean, and an OK cannot make it dirty."""
+    """A model-only REVISE leaves the verdict OK and the figures clean.
+
+    Changed under the new rule: the model's opinion no longer moves the
+    verdict, so this is now OK rather than REVISE. `verified` is untouched
+    either way, because it tracks only whether the figures reconcile.
+    """
     client = ScriptedLLM(["TOOL: gross_margin", GOOD, "REVISE\ntoo thin"])
     result = Orchestrator(client, synthetic_store, max_revisions=0).run("TST")
-    assert result.verdict == REVISE
+    assert result.verdict == OK
     assert result.verified
+    assert "model opinion only" in result.critic_notes
 
 
 def test_model_only_revise_does_not_trigger_retry(synthetic_store):
+    """Three calls and no more: tool, narrative, critic -- no revision round.
+
+    Changed under the new rule: the verdict stays OK, and the retry loop is
+    never entered. The call count is the real assertion here -- it is what
+    proves no revision round happened.
+    """
     client = ScriptedLLM(["TOOL: gross_margin", GOOD, "REVISE\ntoo thin"])
     result = Orchestrator(client, synthetic_store, max_revisions=3).run("TST")
-    assert result.verdict == REVISE
+    assert result.verdict == OK
     assert result.revisions == 0
     assert client.call_count == 3
+    assert result.retryable is False
 
 
 def test_provider_failure_propagates(synthetic_store):

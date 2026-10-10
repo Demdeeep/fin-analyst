@@ -170,7 +170,7 @@ class CriticAgent:
             )
             addressed, flag_notes = _parse_flag_review(reply)
             if flag_notes:
-                notes.append(flag_notes)
+                notes.append(_strip_model_flag_counts(flag_notes))
             if addressed is None:
                 # Abstention is not acquittal. The screen stands.
                 notes.append(
@@ -209,10 +209,9 @@ class CriticAgent:
                 # code-checked findings (numerified_undefined or unresolved
                 # must-address flags) may do that.
                 if parsed == REVISE and verdict == OK:
-                    verdict = REVISE
                     model_only = True
                 if general_notes:
-                    notes.append(general_notes)
+                    notes.append(_strip_model_flag_counts(general_notes))
             else:
                 notes.append(
                     "critic model returned no usable verdict; mechanically "
@@ -283,6 +282,24 @@ def _code_checked_summary(issues, unresolved) -> str:
     if issues:
         return f"{len(issues)} figure(s) did not reconcile with Stage 1"
     return ""
+
+
+_CRITICAL_COUNT = re.compile(r"\b\d+\s+critical\s+flags?\b", re.IGNORECASE)
+
+
+def _strip_model_flag_counts(note: str) -> str:
+    """Drop the model's own flag tally from the notes.
+
+    The critic's running complaint has been "fails to engage with 16 critical
+    flags", against a company whose Stage 1 screen actually raised six
+    criticals. That number is not a finding, it is a guess, and repeating it
+    makes an unsupported count look authoritative. The screen's counts are
+    already carried in ``_code_checked_summary`` and in the coverage table, so
+    nothing is lost -- only the invented figure.
+    """
+    if not note:
+        return ""
+    return _CRITICAL_COUNT.sub("the critical flags the screen reported", note)
 
 
 def _derive_verdict(issues, unresolved) -> str:

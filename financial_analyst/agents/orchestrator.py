@@ -100,7 +100,7 @@ class Orchestrator:
         )
         revisions = 0
 
-        while verdict.verdict == REVISE and revisions < self.max_revisions:
+        while verdict.verdict == REVISE and verdict.retryable and revisions < self.max_revisions:
             unresolved = [
                 f"{item.flag.rule} {item.flag.year_label}"
                 for item in verdict.coverage

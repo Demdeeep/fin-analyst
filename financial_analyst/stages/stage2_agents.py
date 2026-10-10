@@ -207,7 +207,6 @@ def main(argv: Optional[list[str]] = None) -> int:
                     print(f"  - {item}")
             if result.critic_notes:
                 print(f"  critic_notes: {result.critic_notes}")
-            usage = getattr(getattr(getattr(stage2_agents := None, '__class__', None), '__name__', None), '__name__', None)
     return 0
 
 
