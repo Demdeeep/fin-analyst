@@ -89,6 +89,7 @@ def run_stage4(
     flags_path: Optional[Path] = None,
     output_dir: Optional[Path] = None,
     provider: str = "stub",
+    model: Optional[str] = None,
     scope: str = config.PEER_SCOPE_SECTOR,
     tickers: Optional[list[str]] = None,
     write: bool = True,
@@ -109,7 +110,9 @@ def run_stage4(
         raise ValueError(f"{metrics_path} contains no companies")
 
     flags_by_ticker = load_flag_refs(flags_path)
-    comparator = ComparatorAgent(build_client(provider), store, metrics=DEFAULT_METRICS)
+    comparator = ComparatorAgent(
+        build_client(provider, model=model), store, metrics=DEFAULT_METRICS, scope=scope
+    )
 
     results = []
     for ticker in (tickers or list(store.tickers)):
@@ -140,13 +143,16 @@ def run_stage4(
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Stage 4 peer comparison")
     parser.add_argument("--provider", default="stub",
-                        choices=("stub", "openai", "auto"))
+                        choices=("stub", "openai", "anthropic", "auto"))
+    parser.add_argument("--model", default=None,
+                        help="override the model id (default gpt-4o-mini / "
+                             "claude-haiku-4-5-20251001 by provider)")
     parser.add_argument("--scope", default=config.PEER_SCOPE_SECTOR,
                         choices=(config.PEER_SCOPE_SECTOR, config.PEER_SCOPE_SAMPLE))
     parser.add_argument("--ticker", action="append", dest="tickers")
     parser.add_argument("--no-write", action="store_true")
     parser.add_argument("--dotenv", default=None,
-                        help="path to a .env file holding OPENAI_API_KEY")
+                        help="path to a .env file holding the selected provider's API key")
     arguments = parser.parse_args(argv)
 
     # Announce the provider before spending anything, so `--provider auto` with
@@ -156,10 +162,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         if not load_dotenv(arguments.dotenv):
             print(f"warning: {arguments.dotenv} not found", file=sys.stderr)
-    print(f"provider: {describe(arguments.provider)}", file=sys.stderr)
+    print(f"provider: {describe(arguments.provider, model=arguments.model)}", file=sys.stderr)
 
     results = run_stage4(
         provider=arguments.provider,
+        model=arguments.model,
         scope=arguments.scope,
         tickers=arguments.tickers,
         write=not arguments.no_write,

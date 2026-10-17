@@ -71,12 +71,12 @@ native tool calling and multi-turn message arrays are deliberately excluded: the
 are transport concerns, and letting them into the agent loop would tie the agents
 to one vendor's protocol.
 
-Two implementations ship: a deterministic `ScriptedLLM` that records every prompt
-(prompts are where agent behaviour goes wrong, and they are otherwise
-invisible), and an OpenAI adapter whose SDK is imported *inside* `complete()`, so
-the package imports and the suite runs with no SDK and no key. `provider="auto"`
-degrades to the stub rather than raising — a missing key should not produce a
-pipeline that looks broken for the wrong reason.
+Three implementations ship: a deterministic `ScriptedLLM` that records every
+prompt (prompts are where agent behaviour goes wrong, and they are otherwise
+invisible), plus OpenAI and Anthropic adapters whose SDKs are imported only when
+`complete()` runs. The package and suite work with no provider SDK or key.
+`provider="auto"` degrades to the stub rather than raising — a missing key should
+not produce a pipeline that looks broken for the wrong reason.
 
 ### An agent may only cite, never recompute
 
@@ -214,14 +214,13 @@ helped, which is the question a person staring at a `REJECT` actually has.
 
 Verified: the pipeline, prompts, tool loop, critic, coverage screen and
 orchestration all execute end to end with **no API key and no network**. A key
-changes prose quality and nothing structural. The OpenAI adapter's response
-handling is exercised against a stubbed SDK — truncation detection, empty
-completions and error wrapping all have tests that need no credentials.
+changes prose quality and nothing structural. Both model adapters' response
+handling is exercised against fake SDKs; no credentials are needed by those tests.
 
-Not verified: **the adapter has never made a real call.** No live request has
-been sent, so nothing is confirmed about network access, real latency, whether
-the model actually complies with the output format the critic parses, or whether
-a real verdict differs from the stub's. Everything mechanical around it has been.
+Not verified: **no successful live model response has been confirmed.** Live
+latency, provider behavior, whether a model complies with the output format the
+critic parses, and whether a real verdict differs from the stub's remain
+unverified. Everything mechanical around the adapters has offline tests.
 
 Two consequences of a live first run are known in advance, and both are handled
 rather than assumed away:
@@ -236,10 +235,44 @@ rather than assumed away:
   anything, and `--dotenv` accepts a `.env` file (gitignored; `.env.example` is
   tracked). An already-exported key wins over the file.
 
-## Stage 4 (built) — cross-company comparison
+## Stage 3 (built) — filing evidence retrieval
 
-- **Stage 3** — retrieval over filings for the figures a CSV lacks (segment
-  detail, footnotes, management discussion).
+```text
+ticker ─► SEC company mapping ─► latest annual filing ─► paragraph extraction
+                                                        ─► lexical ranking
+                                                        ─► cited evidence JSON/MD
+```
+
+`financial_analyst.stages.stage3_filing_retrieval` finds the latest 10-K, 20-F or
+40-F for a ticker using EDGAR's public submissions data, downloads its primary
+document, and ranks paragraphs by query-term overlap. It uses Python's standard
+library and requires no model API or paid credits. Automated SEC requests require
+an identifying `FIN_ANALYST_SEC_USER_AGENT` value with a contact email; the code
+does not invent one. Set it in the environment or pass `--user-agent`.
+
+The output includes the filing form, filed date, report date, accession number,
+paragraph number, and source URL for each match. This is **lexical retrieval**:
+it finds text that shares terms with the query; it does not establish that a
+claim is true or interpret the filing. An empty result is an abstention. Review
+the cited source before relying on a passage. Tests use mocked SEC responses and
+HTML fixtures, so the suite does not make network requests.
+
+```bash
+FIN_ANALYST_SEC_USER_AGENT="Your Name contact@example.com" \\
+  python -m financial_analyst.stages.stage3_filing_retrieval \\
+  --ticker AAPL --query "services revenue growth"
+```
+
+Stage 2 can request this lookup with `--filing-query`. It receives the matched
+passages in its analyst prompt and asks the model to cite them with stable
+`[FILING n]` labels. Stage 2 reports preserve the citation-to-source mapping.
+This is optional; omitting `--filing-query` keeps Stage 2 offline. The critic's
+mechanical figure verifier still accepts figures only when they reconcile with
+Stage 1, so the prompt limits filing excerpts to qualitative context. Semantic
+search, multiple filings per company, and automated verification that a cited
+passage supports the surrounding claim remain follow-up work.
+
+## Stage 4 (built) — cross-company comparison
 
 ### Peer arithmetic is ours, not the model's
 

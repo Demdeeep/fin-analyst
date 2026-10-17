@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1018">
+  <meta name="description" content="Northstar turns company financials into a clear, auditable research workflow.">
+  <title>Northstar — Financial Research Terminal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#dashboard" aria-label="Northstar home">
+        <span class="brand-icon">✦</span>
+        <span><strong>northstar</strong><small>RESEARCH TERMINAL</small></span>
+      </a>
+      <div class="workspace-label">WORKSPACE <span>01</span></div>
+      <nav class="main-nav" aria-label="Main navigation">
+        <button class="nav-item active" data-page="dashboard"><span class="nav-glyph">◫</span> Overview <kbd>01</kbd></button>
+        <button class="nav-item" data-page="documents"><span class="nav-glyph">▤</span> Document lab <kbd>02</kbd></button>
+      </nav>
+      <div class="sidebar-rule"></div>
+      <div class="sidebar-section-title">YOUR WORKFLOW</div>
+      <div class="workflow-list">
+        <div class="workflow-step"><span class="step-number">01</span><span><b>Fundamentals</b><small>Calculate &amp; validate</small></span><i class="step-dot"></i></div>
+        <div class="workflow-step"><span class="step-number">02</span><span><b>Analyst review</b><small>Explain what changed</small></span><i class="step-dot"></i></div>
+        <div class="workflow-step"><span class="step-number">03</span><span><b>Filing context</b><small>Ground the narrative</small></span><i class="step-dot"></i></div>
+        <div class="workflow-step"><span class="step-number">04</span><span><b>Peer lens</b><small>Compare like with like</small></span><i class="step-dot"></i></div>
+      </div>
+      <div class="sidebar-spacer"></div>
+      <div class="offline-card"><span class="offline-star">✦</span><div><b>Start free with Stub</b><small>Predictable analysis. No API credits.</small></div><span class="live-dot"></span></div>
+      <button class="settings-link" id="openSettings"><span>⚙</span> Connection settings <span class="settings-arrow">↗</span></button>
+      <div class="sidebar-footer"><span>BUILD 01.04</span><span>© NORTHSTAR</span></div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div class="breadcrumb"><span class="crumb-muted">NORTHSTAR</span><span class="crumb-slash">/</span><span id="pageCrumb">OVERVIEW</span></div>
+        <div class="topbar-right">
+          <div class="api-status" id="apiStatus"><span class="status-light"></span><span id="apiStatusText">API not connected</span></div>
+          <button class="icon-button" id="topSettings" aria-label="Connection settings" title="Connection settings">⚙</button>
+          <div class="avatar">N</div>
+        </div>
+      </header>
+
+      <section class="page active-page" id="dashboardPage">
+        <div class="hero-panel">
+          <div class="hero-copy">
+            <div class="eyebrow"><span class="eyebrow-line"></span> YOUR COMPANY RESEARCH, IN FOCUS</div>
+            <h1>Look closer.<br><em>See the whole picture.</em></h1>
+            <p>Turn financial statements into a grounded, reviewable story. Every number starts with your source data.</p>
+            <div class="hero-meta"><span>✦ &nbsp; BUILT FOR CAREFUL READING</span><span class="hero-meta-divider">·</span><span>FOUR CONNECTED STAGES</span></div>
+          </div>
+          <div class="hero-art" aria-hidden="true">
+            <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div>
+            <div class="planet"></div><div class="planet-glow"></div>
+            <span class="orbit-label label-a">DATA</span><span class="orbit-label label-b">EVIDENCE</span><span class="orbit-label label-c">CONTEXT</span>
+            <span class="spark spark-a">✦</span><span class="spark spark-b">·</span><span class="spark spark-c">✧</span>
+          </div>
+          <div class="hero-index">Nº 01 <span>—</span> ANALYSIS</div>
+        </div>
+
+        <div class="section-heading upload-heading">
+          <div><div class="section-kicker">BEGIN WITH THE SOURCE</div><h2>Bring your financials</h2></div>
+          <div class="format-chip"><span class="file-icon">▤</span> CSV · UP TO 10 MB</div>
+        </div>
+        <div class="upload-card" id="csvDropzone">
+          <input id="csvInput" type="file" accept=".csv,text/csv" hidden>
+          <div class="upload-icon-wrap"><span>↥</span></div>
+          <div class="upload-text"><h3>Drop your CSV to begin</h3><p>or <button class="text-button" id="browseCsv">browse files</button> from your computer</p><small>Financials stay in this session and are processed by your connected Python service.</small></div>
+          <div class="upload-actions"><button class="button button-quiet" id="sampleCsv">Try sample data <span>↗</span></button><button class="button button-primary" id="analyzeCsv" disabled>Run Stage 1 <span>→</span></button></div>
+          <div class="selected-file" id="selectedFile" hidden></div>
+          <div class="drop-corner corner-tl"></div><div class="drop-corner corner-br"></div>
+        </div>
+        <div class="connection-hint" id="connectionHint"><span class="hint-icon">i</span><span>Connect your Python analysis service to get started.</span><button id="hintSettings">Set up connection <span>→</span></button></div>
+
+        <section class="results-section" id="resultsSection" hidden>
+          <div class="results-title-row"><div><div class="section-kicker">STAGE 01 · FUNDAMENTALS</div><h2 id="resultsTitle">Financial snapshot</h2></div><div class="result-controls"><span class="dataset-tag" id="datasetTag">SOURCE CSV</span><button class="button button-quiet button-small" id="downloadMetrics">↓ Export metrics</button></div></div>
+          <div class="kpi-grid" id="kpiGrid"></div>
+          <div class="analysis-grid">
+            <article class="panel chart-panel">
+              <div class="panel-heading"><div><div class="section-kicker">A QUICK READ</div><h3>Revenue trajectory</h3></div><select id="chartTicker" class="select-small" aria-label="Company for revenue chart"></select></div>
+              <div id="chartWrap" class="chart-wrap"></div>
+              <div class="chart-footer"><span><i class="legend-dot"></i> REPORTED REVENUE</span><span id="chartRange">—</span></div>
+            </article>
+            <article class="panel signals-panel">
+              <div class="panel-heading"><div><div class="section-kicker">ATTENTION REQUIRED</div><h3>Signals to review</h3></div><span class="signal-count" id="signalCount">0</span></div>
+              <div class="signal-filters"><button class="filter-chip selected" data-flag-filter="all">All <span id="allSignalCount">0</span></button><button class="filter-chip" data-flag-filter="critical">Critical <span id="criticalSignalCount">0</span></button><button class="filter-chip" data-flag-filter="warning">Watch <span id="warningSignalCount">0</span></button></div>
+              <div class="signal-list" id="signalList"></div>
+            </article>
+          </div>
+          <article class="panel metrics-panel">
+            <div class="panel-heading metrics-heading"><div><div class="section-kicker">THE UNDERLYING NUMBERS</div><h3>Calculated metrics</h3></div><div class="table-tools"><label class="search-box"><span>⌕</span><input id="metricSearch" type="search" placeholder="Find a company…"></label><button class="button button-quiet button-small" id="downloadSource">↓ Source data</button></div></div>
+            <div class="table-scroll" id="metricsTable"></div>
+            <div class="table-foot"><span id="tableCount">—</span><span>Ratios are calculated from uploaded financial statements.</span></div>
+          </article>
+
+          <div class="stage-pair">
+            <article class="stage-card analyst-card">
+              <div class="stage-card-top"><div class="stage-icon">✧</div><span class="stage-pill">STAGE 02</span></div>
+              <div class="section-kicker">THE ANALYST'S LENS</div><h3>Make the numbers speak.</h3><p>A narrative review of performance and risk, with each claim checked against the uploaded figures.</p>
+              <div class="run-options">
+                <label class="field-label">MODEL PROVIDER<select id="providerSelect"><option value="stub">Stub · free, deterministic</option><option value="openai">OpenAI · API key required</option><option value="anthropic">Anthropic · API key required</option></select></label>
+                <label class="field-label">MODEL OVERRIDE · OPTIONAL<input id="modelOverride" type="text" placeholder="Use provider default"></label>
+                <div class="ticker-picks" id="analystTickers"></div>
+                <label class="field-label filing-field"><span>OPTIONAL SEC FILING QUESTION</span><input id="filingQuery" type="text" placeholder="e.g. What could affect demand?"></label>
+                <label class="field-label filing-field"><span>SEC CONTACT EMAIL · REQUIRED FOR FILING SEARCH</span><input id="secContact" type="email" placeholder="you@example.com"></label>
+              </div>
+              <div class="consent-note" id="providerPrivacy">Stub makes no model calls. Choose a live provider only if you want to send company metrics to its API.</div>
+              <button class="button button-primary full-button" id="runAnalyst">Run analyst review <span>→</span></button>
+              <div class="analysis-results" id="analystResults"></div>
+            </article>
+            <article class="stage-card peers-card">
+              <div class="stage-card-top"><div class="stage-icon peer-icon">◉</div><span class="stage-pill">STAGE 04</span></div>
+              <div class="section-kicker">THE PEER LENS</div><h3>Find the relative story.</h3><p>Compare profitability, growth and leverage. Peer arithmetic is computed in Python and weak groups are declined.</p>
+              <div class="run-options"><label class="field-label">COMPARISON GROUP<select id="peerScope"><option value="sector">By sector (fallback to all)</option><option value="sample">All companies in this CSV</option></select></label><div class="provider-caption" id="peerProviderCaption">Uses the selected Stage 2 provider.</div></div>
+              <button class="button button-outline full-button" id="runPeers">Compare selected peers <span>→</span></button>
+              <div class="analysis-results" id="peerResults"></div>
+            </article>
+          </div>
+        </section>
+        <footer class="page-footer"><span>✦ &nbsp; NORTHSTAR RESEARCH TERMINAL</span><span>DECISIONS ARE YOURS. CHECK THE SOURCE.</span></footer>
+      </section>
+
+      <section class="page" id="documentsPage">
+        <div class="document-hero"><div class="section-kicker">DOCUMENT LAB · LOCAL EXTRACTION</div><h1>Read between<br><em>the statements.</em></h1><p>Explore annual reports with page-level references. Extracted financial rows stay reviewable before you turn them into a CSV.</p><div class="doc-badge"><span>⌁</span> TEXT PDF · MAX 25 MB · NO OCR</div></div>
+        <div class="document-layout">
+          <div class="document-main">
+            <div class="upload-card pdf-dropzone" id="pdfDropzone"><input id="pdfInput" type="file" accept=".pdf,application/pdf" hidden><div class="upload-icon-wrap pdf-icon"><span>▤</span></div><div class="upload-text"><h3>Bring in a company report</h3><p>Drop a PDF here, or <button class="text-button" id="browsePdf">browse files</button></p><small>Selectable text is required. Scanned image PDFs need OCR, which is not included.</small></div><div class="upload-actions"><button class="button button-primary" id="extractPdf" disabled>Read this document <span>→</span></button></div><div class="selected-file" id="selectedPdf" hidden></div><div class="drop-corner corner-tl"></div><div class="drop-corner corner-br"></div></div>
+            <div id="pdfResults" class="pdf-results" hidden></div>
+          </div>
+          <aside class="doc-side-note"><div class="note-index">FIELD NOTE Nº 01</div><div class="note-star">✳</div><h3>Source first.<br>Story second.</h3><p>PDF extraction can misread dense tables. Northstar preserves page numbers and raw rows so you can compare every value to the original document.</p><div class="note-rule"></div><div class="note-list"><span>01</span> Review extracted lines<span>02</span> Confirm units and year<span>03</span> Download a draft CSV</div></aside>
+        </div>
+        <footer class="page-footer"><span>✦ &nbsp; NORTHSTAR RESEARCH TERMINAL</span><span>DOCUMENTS ARE NOT INDEPENDENTLY VERIFIED.</span></footer>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="settingsDialog" class="settings-dialog">
+    <form method="dialog" class="dialog-top"><div><div class="section-kicker">CONNECTION</div><h2>Point Northstar north.</h2></div><button class="dialog-close" aria-label="Close">×</button></form>
+    <p class="dialog-copy">The Netlify site is the interface. Enter the public URL of your Python API service to run calculations, PDF extraction and reviews.</p>
+    <label class="field-label" for="apiUrl">PYTHON API URL</label>
+    <div class="url-input-row"><span>↗</span><input id="apiUrl" type="url" placeholder="https://northstar-python-api.onrender.com" autocomplete="url"></div>
+    <label class="field-label access-key-label" for="apiToken">OPTIONAL SHARED PREVIEW ACCESS KEY</label>
+    <div class="url-input-row"><span>⌑</span><input id="apiToken" type="password" placeholder="Only if configured on the Python service" autocomplete="current-password"></div>
+    <div class="dialog-status" id="dialogStatus">Your connection is stored in this browser only.</div>
+    <div class="dialog-actions"><button type="button" class="button button-quiet" id="testConnection">Test connection</button><button type="button" class="button button-primary" id="saveConnection">Save connection</button></div>
+    <div class="dialog-help"><b>Don't have an API URL yet?</b><br>Deploy the Python service using the included <code>render.yaml</code>, then paste its URL here. A shared access key is required before the backend can use paid model providers. The free test service may sleep when idle.</div>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

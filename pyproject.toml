@@ -15,10 +15,25 @@ dev = [
     "hypothesis==6.122.3",
 ]
 # Live model access. Optional on purpose: Stage 1 and the whole test suite run
-# without it, and the OpenAI adapter imports the SDK lazily so an absent package
+# without it, and each adapter imports its SDK lazily so an absent package
 # only matters at the moment a live call is attempted.
 openai = [
     "openai>=1.0.0",
+]
+anthropic = [
+    "anthropic>=1.0.0",
+]
+web = [
+    "streamlit>=1.49.0",
+]
+pdf = [
+    "pypdf>=5.0.0",
+    "pdfplumber>=0.11.0",
+]
+api = [
+    "fastapi>=0.115.0,<1.0.0",
+    "uvicorn[standard]>=0.30.0,<1.0.0",
+    "python-multipart>=0.0.9",
 ]
 
 [build-system]

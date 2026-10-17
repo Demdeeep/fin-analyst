@@ -19,6 +19,7 @@ htmlcov/
 .env
 .env.*
 !.env.example
+.streamlit/secrets.toml
 
 
 # Generated reports: recreated on every run by

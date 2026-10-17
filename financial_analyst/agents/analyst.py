@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
 from . import prompts
+from ..filings import EvidenceChunk
 from .providers.base import LLMClient
 from .tools import MetricStore, ToolCatalogue, ToolObservation, execute, parse_tool_request
 from .utils_text import company_line, flags_section, span_of
@@ -35,6 +36,7 @@ class AnalystResult:
     observation: ToolObservation
     first_turn: str = ""
     turns: int = 2
+    filing_sources: tuple[dict, ...] = ()
 
     @property
     def tools_requested(self) -> tuple[str, ...]:
@@ -62,6 +64,8 @@ class AnalystAgent:
         ticker: str,
         flags: Sequence[str] = (),
         year: Optional[str] = None,
+        filing_evidence: Sequence[EvidenceChunk] = (),
+        filing_query: Optional[str] = None,
     ) -> AnalystResult:
         """Analyse one company.
 
@@ -90,6 +94,9 @@ class AnalystAgent:
             parse_tool_request(first_turn), self.store, ticker, year
         )
 
+        filing_context, filing_sources = _render_filing_evidence(
+            filing_evidence, filing_query
+        )
         narrative = self.client.complete(
             system=self._system(),
             user=prompts.ANALYST_TURN_TWO.format(
@@ -98,6 +105,7 @@ class AnalystAgent:
                 span=span_of(self.store, ticker),
                 flags_section=flags_section(flags),
                 observation=observation.render(),
+                filing_evidence=filing_context,
             ),
         )
 
@@ -106,4 +114,35 @@ class AnalystAgent:
             narrative=narrative.strip(),
             observation=observation,
             first_turn=first_turn,
+            filing_sources=filing_sources,
         )
+
+
+def _render_filing_evidence(
+    evidence: Sequence[EvidenceChunk], query: Optional[str]
+) -> tuple[str, tuple[dict, ...]]:
+    """Render retrieved passages with stable source ids for the analyst."""
+    if not evidence:
+        if query is None:
+            return "No filing search was requested.", ()
+        return (
+            f"Stage 3 searched for {query!r} but found no matching passages. "
+            "Do not make filing-based claims.",
+            (),
+        )
+
+    sections = []
+    sources = []
+    for index, item in enumerate(evidence, start=1):
+        source_id = f"FILING {index}"
+        sections.append(
+            f"[{source_id}]\n{item.text}\nSource: {item.citation}"
+        )
+        sources.append({
+            "source_id": source_id,
+            "citation": item.citation,
+            "source_url": item.source_url,
+            "accession_number": item.accession_number,
+            "paragraph": item.paragraph,
+        })
+    return "\n\n".join(sections), tuple(sources)

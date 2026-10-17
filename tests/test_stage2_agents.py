@@ -27,6 +27,7 @@ from financial_analyst.agents.flags import load_flag_refs
 from financial_analyst.agents.orchestrator import Orchestrator
 from financial_analyst.agents.providers.stub import ExplodingLLM, ScriptedLLM
 from financial_analyst.agents.tools import MetricStore
+from financial_analyst.filings import EvidenceChunk, FilingMetadata
 from financial_analyst.stages import stage2_agents as stage2
 
 from test_agents import synthetic_store  # noqa: F401 - reuse the fixture
@@ -68,6 +69,32 @@ def test_analyst_prompt_carries_the_catalogue_and_the_flags(synthetic_store):
     assert "44.0%" in second_user          # the observation reached the model
     assert "explicitly names every critical flag" in second_user
     assert "Use the rule ids exactly as written" in second_user
+
+
+def test_analyst_receives_filing_evidence_with_citation_instructions(synthetic_store):
+    client = ScriptedLLM(["TOOL: gross_margin", GOOD])
+    evidence = EvidenceChunk(
+        ticker="TST",
+        company_name="Test Co",
+        form="10-K",
+        filing_date="2025-02-10",
+        report_date="2024-12-31",
+        accession_number="0000000123-25-000001",
+        source_url="https://www.sec.gov/Archives/test/annual.htm",
+        paragraph=7,
+        score=0.8,
+        text="Cloud demand contributed to higher services revenue.",
+    )
+
+    result = AnalystAgent(client, synthetic_store).analyse(
+        "TST", filing_evidence=[evidence], filing_query="services revenue"
+    )
+
+    assert "[FILING 1]" in client.calls[1].user
+    assert "Cloud demand contributed" in client.calls[1].user
+    assert "do not introduce numbers from them" in client.calls[1].user
+    assert result.filing_sources[0]["source_id"] == "FILING 1"
+    assert result.filing_sources[0]["accession_number"] == "0000000123-25-000001"
 
 
 def test_analyst_reports_a_hallucinated_tool_name(synthetic_store):
@@ -389,8 +416,8 @@ def test_retry_prompt_names_unresolved_must_address_flags_by_rule_id(synthetic_s
         def __init__(self):
             self.calls = []
 
-        def analyse(self, ticker, flags=(), year=None):
-            self.calls.append((ticker, list(flags), year))
+        def analyse(self, ticker, flags=(), year=None, filing_evidence=(), filing_query=None):
+            self.calls.append((ticker, list(flags), year, list(filing_evidence), filing_query))
             return AnalystResult(
                 ticker=ticker,
                 narrative="stub narrative",
@@ -460,6 +487,62 @@ def test_stage2_can_limit_to_one_ticker(staged, tmp_path):
         tickers=["TST"], write=False,
     )
     assert [result.ticker for result in results] == ["TST"]
+
+
+def test_stage2_passes_filing_evidence_and_saves_citations(staged, tmp_path, monkeypatch):
+    metrics, flags = staged
+    evidence = EvidenceChunk(
+        ticker="TST",
+        company_name="Test Co",
+        form="10-K",
+        filing_date="2025-02-10",
+        report_date="2024-12-31",
+        accession_number="0000000123-25-000001",
+        source_url="https://www.sec.gov/Archives/test/annual.htm",
+        paragraph=7,
+        score=0.8,
+        text="Cloud demand contributed to higher services revenue.",
+    )
+
+    class FakeFilingClient:
+        def latest_annual_filing(self, ticker):
+            assert ticker == "TST"
+            return FilingMetadata(
+                ticker="TST", company_name="Test Co", cik="0000000123",
+                form="10-K", filing_date="2025-02-10", report_date="2024-12-31",
+                accession_number="0000000123-25-000001",
+                primary_document="annual.htm", url=evidence.source_url,
+            )
+
+        def filing_html(self, filing):
+            return "<p>Cloud demand contributed to higher services revenue.</p>"
+
+    client = ScriptedLLM([
+        "TOOL: gross_margin",
+        "Services demand remained strong [FILING 1]. Revenue grew 9.9%.",
+    ])
+    monkeypatch.setattr(stage2, "build_client", lambda provider, model=None: client)
+    out = tmp_path / "reports"
+    results = stage2.run_stage2(
+        metrics_path=metrics,
+        flags_path=flags,
+        output_dir=out,
+        provider="stub",
+        filing_query="services revenue",
+        filing_client=FakeFilingClient(),
+        tickers=["TST"],
+        consult_critic_model=False,
+        write=True,
+    )
+
+    assert results[0].filing_sources[0]["source_id"] == "FILING 1"
+    assert "Cloud demand contributed" in client.calls[1].user
+    payload = json.loads((out / "stage2_analysis.json").read_text())
+    assert payload["filing_query"] == "services revenue"
+    assert payload["companies"][0]["filing_sources"][0]["source_url"] == evidence.source_url
+    report = (out / "stage2_analysis.md").read_text()
+    assert "Stage 3 filing query" in report
+    assert "[FILING 1]" in report
 
 
 def test_stage2_refuses_to_run_before_stage_1(tmp_path):

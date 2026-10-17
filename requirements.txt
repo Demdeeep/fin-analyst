@@ -1,22 +1,9 @@
-# Pinned from the tested virtualenv (uv pip freeze), so this records the
-# environment the suite was actually verified against rather than a second,
-# possibly divergent set of pins.
-#
-# Direct dependencies: pandas, numpy, pytest, pytest-cov, hypothesis.
-# The rest are transitive, pinned so the environment is reproducible.
-
-attrs==26.1.0
-coverage==7.16.2
-hypothesis==6.122.3
-iniconfig==2.3.0
+# Streamlit Community Cloud runtime. Keep the Python version aligned with
+# requires-python in pyproject.toml (>=3.11,<3.12).
 numpy==1.26.4
-packaging==26.3
 pandas==2.3.3
-pluggy==1.6.0
-pytest-cov==6.0.0
-pytest==8.3.4
-python-dateutil==2.9.0.post0
-pytz==2026.4
-six==1.17.0
-sortedcontainers==2.4.0
-tzdata==2026.4
+streamlit==1.56.0
+pypdf==6.20.0
+pdfplumber==0.11.10
+openai==3.19.2
+anthropic==1.13.0

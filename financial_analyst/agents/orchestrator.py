@@ -17,7 +17,9 @@ from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
 from .analyst import AnalystAgent, AnalystResult
+from .citations import CitationIssue, check_filing_citations
 from .critic import CriticAgent, CriticVerdict, OK, REJECT, REVISE
+from ..filings import EvidenceChunk
 from .providers.base import LLMClient
 from .tools import MetricStore
 from .verification import ClaimIssue
@@ -42,6 +44,8 @@ class Stage2Result:
     #: causes with opposite answers, and deriving it from the verdict word plus
     #: the issue list is exactly the conflation this field exists to prevent.
     retryable: bool = True
+    filing_sources: tuple[dict, ...] = ()
+    citation_issues: tuple[CitationIssue, ...] = ()
 
     @property
     def verified(self) -> bool:
@@ -63,6 +67,8 @@ class Stage2Result:
             "revisions": self.revisions,
             "tools_requested": list(self.tools_requested),
             "critic_notes": self.critic_notes,
+            "filing_sources": list(self.filing_sources),
+            "citation_issues": [str(issue) for issue in self.citation_issues],
         }
 
 
@@ -85,7 +91,11 @@ class Orchestrator:
         self.max_revisions = max_revisions
 
     def run(
-        self, ticker: str, flags: Sequence = ()
+        self,
+        ticker: str,
+        flags: Sequence = (),
+        filing_evidence: Sequence[EvidenceChunk] = (),
+        filing_query: Optional[str] = None,
     ) -> Stage2Result:
         """Analyse one company and review the result.
 
@@ -94,7 +104,12 @@ class Orchestrator:
         while a metric Stage 1 declined to compute being given a number is not
         repairable by rewording and is not worth a second attempt.
         """
-        analyst_result = self.analyst.analyse(ticker, flags=flags)
+        analyst_result = self.analyst.analyse(
+            ticker,
+            flags=flags,
+            filing_evidence=filing_evidence,
+            filing_query=filing_query,
+        )
         verdict = self.critic.review(
             ticker, analyst_result.narrative, flags=flags
         )
@@ -119,6 +134,8 @@ class Orchestrator:
             analyst_result = self.analyst.analyse(
                 ticker,
                 flags=list(flags) + [revision_note],
+                filing_evidence=filing_evidence,
+                filing_query=filing_query,
             )
             verdict = self.critic.review(
                 ticker, analyst_result.narrative, flags=flags
@@ -138,4 +155,9 @@ class Orchestrator:
             flags_considered=verdict.flags_considered,
             flags_addressed=verdict.flags_addressed,
             retryable=verdict.retryable,
+            filing_sources=analyst_result.filing_sources,
+            citation_issues=tuple(check_filing_citations(
+                analyst_result.narrative,
+                (source["source_id"] for source in analyst_result.filing_sources),
+            )),
         )

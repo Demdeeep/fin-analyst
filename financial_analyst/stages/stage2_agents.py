@@ -28,6 +28,12 @@ from ..agents.critic import REJECT
 from ..agents.flags import load_flag_refs
 from ..agents.providers import build_client, describe
 from ..agents.tools import MetricStore
+from ..filings import (
+    EvidenceChunk,
+    FilingRetrievalError,
+    SECFilingClient,
+    search_filing,
+)
 
 OUTPUT_STAGE2_JSON = "stage2_analysis.json"
 OUTPUT_STAGE2_MD = "stage2_analysis.md"
@@ -46,7 +52,9 @@ def load_flags(path: Path) -> dict[str, list[str]]:
     }
 
 
-def render_report(results: list[Stage2Result], provider: str) -> str:
+def render_report(
+    results: list[Stage2Result], provider: str, filing_query: Optional[str] = None
+) -> str:
     """A markdown view of the run, for a reader who will not open the JSON."""
     verified = sum(1 for result in results if result.verified)
     lines = [
@@ -59,6 +67,12 @@ def render_report(results: list[Stage2Result], provider: str) -> str:
         "every number below is checked against Stage 1's output.",
         "",
     ]
+    if filing_query is not None:
+        lines += [
+            f"Stage 3 filing query: `{filing_query}`. Filing passages provide "
+            "qualitative context; figures remain checked against Stage 1.",
+            "",
+        ]
     for result in results:
         coverage = (
             f" — flags addressed {result.flags_addressed}/{result.flags_considered}"
@@ -79,6 +93,19 @@ def render_report(results: list[Stage2Result], provider: str) -> str:
         ]
         if result.tools_requested:
             lines += ["Metrics used: " + ", ".join(result.tools_requested), ""]
+        if result.filing_sources:
+            lines.append("Filing sources:")
+            lines += [
+                f"- [{source['source_id']}] {source['citation']}"
+                for source in result.filing_sources
+            ]
+            lines.append("")
+        elif filing_query is not None:
+            lines += ["No filing passages matched this query.", ""]
+        if result.citation_issues:
+            lines.append("Filing citation checks:")
+            lines += [f"- {issue}" for issue in result.citation_issues]
+            lines.append("")
         if result.issues:
             lines.append("Unverified figures:")
             lines += [f"- {issue}" for issue in result.issues]
@@ -106,6 +133,10 @@ def run_stage2(
     flags_path: Optional[Path] = None,
     output_dir: Optional[Path] = None,
     provider: str = "stub",
+    model: Optional[str] = None,
+    filing_query: Optional[str] = None,
+    sec_user_agent: Optional[str] = None,
+    filing_client: Optional[SECFilingClient] = None,
     tickers: Optional[list[str]] = None,
     consult_critic_model: bool = True,
     write: bool = True,
@@ -124,44 +155,74 @@ def run_stage2(
         raise ValueError(f"{metrics_path} contains no companies")
 
     flags_by_ticker = load_flag_refs(flags_path)
-    client = build_client(provider)
+    client = build_client(provider, model=model)
     orchestrator = Orchestrator(client, store, consult_critic_model=consult_critic_model)
 
+    if filing_query is not None:
+        if not filing_query.strip():
+            raise FilingRetrievalError("Filing query cannot be blank.")
+        filing_client = filing_client or SECFilingClient(user_agent=sec_user_agent)
+
     selected = tickers or list(store.tickers)
-    results = [
-        orchestrator.run(ticker, flags=flags_by_ticker.get(ticker, ()))
-        for ticker in selected
-    ]
+    results = []
+    for ticker in selected:
+        evidence: list[EvidenceChunk] = []
+        if filing_client is not None:
+            filing = filing_client.latest_annual_filing(ticker)
+            html = filing_client.filing_html(filing)
+            evidence = search_filing(filing, html, filing_query or "")
+        results.append(
+            orchestrator.run(
+                ticker,
+                flags=flags_by_ticker.get(ticker, ()),
+                filing_evidence=evidence,
+                filing_query=filing_query,
+            )
+        )
 
     if write:
         destination = Path(output_dir) if output_dir else config.OUTPUT_DIR
         destination.mkdir(parents=True, exist_ok=True)
         payload = {
             "provider": provider,
+            "filing_query": filing_query,
             "companies": [result.to_dict() for result in results],
         }
         (destination / OUTPUT_STAGE2_JSON).write_text(
             json.dumps(payload, indent=2) + "\n"
         )
-        (destination / OUTPUT_STAGE2_MD).write_text(render_report(results, provider))
+        (destination / OUTPUT_STAGE2_MD).write_text(
+            render_report(results, provider, filing_query=filing_query)
+        )
     return results
 
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Stage 2 agent analysis")
     parser.add_argument(
-        "--provider", default="stub", choices=("stub", "openai", "auto"),
+        "--provider", default="stub", choices=("stub", "openai", "anthropic", "auto"),
         help="'auto' uses OpenAI when a key is configured, else the stub",
     )
+    parser.add_argument("--model", default=None,
+                        help="override the model id (default gpt-4o-mini / "
+                             "claude-haiku-4-5-20251001 by provider)")
     parser.add_argument("--ticker", action="append", dest="tickers",
                         help="limit to one ticker; repeatable")
     parser.add_argument("--no-critic-model", action="store_true",
                         help="rely on the mechanical check only")
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument(
+        "--filing-query", default=None,
+        help="search each selected company's latest annual SEC filing and pass cited excerpts to the analyst",
+    )
+    parser.add_argument(
+        "--sec-user-agent", default=None,
+        help="identifying SEC request user agent; otherwise use FIN_ANALYST_SEC_USER_AGENT",
+    )
     parser.add_argument("--verbose", action="store_true",
                         help="print critic findings and unresolved flags")
     parser.add_argument("--dotenv", default=None,
-                        help="path to a .env file holding OPENAI_API_KEY")
+                        help="path to a .env file holding the selected provider's API key")
     arguments = parser.parse_args(argv)
 
     # Print the provider before any call is made. `--provider auto` with no key
@@ -172,14 +233,21 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         if not load_dotenv(arguments.dotenv):
             print(f"warning: {arguments.dotenv} not found", file=sys.stderr)
-    print(f"provider: {describe(arguments.provider)}", file=sys.stderr)
+    print(f"provider: {describe(arguments.provider, model=arguments.model)}", file=sys.stderr)
 
-    results = run_stage2(
-        provider=arguments.provider,
-        tickers=arguments.tickers,
-        consult_critic_model=not arguments.no_critic_model,
-        write=not arguments.no_write,
-    )
+    try:
+        results = run_stage2(
+            provider=arguments.provider,
+            model=arguments.model,
+            filing_query=arguments.filing_query,
+            sec_user_agent=arguments.sec_user_agent,
+            tickers=arguments.tickers,
+            consult_critic_model=not arguments.no_critic_model,
+            write=not arguments.no_write,
+        )
+    except FilingRetrievalError as error:
+        print(f"filing retrieval error: {error}", file=sys.stderr)
+        return 2
     for result in results:
         print(
             f"{result.ticker:6} {result.verdict:6} "
@@ -207,6 +275,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                     print(f"  - {item}")
             if result.critic_notes:
                 print(f"  critic_notes: {result.critic_notes}")
+            if result.citation_issues:
+                print("  filing_citation_issues:")
+                for issue in result.citation_issues:
+                    print(f"  - {issue}")
     return 0
 
 

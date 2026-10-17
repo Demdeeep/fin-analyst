@@ -75,10 +75,12 @@ class ComparatorAgent:
         client: LLMClient,
         store: MetricStore,
         metrics: Sequence[str] = DEFAULT_METRICS,
+        scope: str = "sector",
     ):
         self.client = client
         self.store = store
         self.metrics = tuple(metrics)
+        self.scope = scope
 
     def compare(
         self,
@@ -87,7 +89,9 @@ class ComparatorAgent:
         year: Optional[str] = None,
     ) -> ComparisonResult:
         year = year or self.store.latest_year(ticker)
-        rows = peers.comparisons(self.store, self.metrics, tickers=[ticker], year=year)
+        rows = peers.comparisons(
+            self.store, self.metrics, tickers=[ticker], year=year, scope=self.scope
+        )
         group = rows[0].group if rows else peers.PeerGroup("", "", ())
 
         narrative = self.client.complete(

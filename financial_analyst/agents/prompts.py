@@ -38,6 +38,11 @@ Rules, in priority order:
    check uses that id to confirm you engaged with it, and a paraphrased flag
    that never names itself is indistinguishable from one you ignored.
 6. Write for a reader who will act on this. Lead with what matters most.
+7. Stage 3 filing excerpts may be provided in turn two. Use them only for
+   qualitative context and cite each filing-based factual statement with its
+   exact `[FILING n]` id. They are retrieval matches, not verified conclusions.
+   Do not quote numeric claims from filing excerpts; figures must still come
+   from Stage 1 values or flags so the mechanical figure check can verify them.
 
 Answer in two turns. First turn: state briefly which metrics you need and emit
 the TOOL line. Second turn: write the analysis.
@@ -63,8 +68,12 @@ Period: {span}
 Metric values you requested:
 {observation}
 
+Filing evidence (cite relevant passages with their exact [FILING n] id):
+{filing_evidence}
+
 Write the analysis. Three to six sentences. Every figure must come from the
-values above or from the flags.
+values above or from the flags. Filing excerpts may support qualitative context,
+but do not introduce numbers from them.
 
 If any critical flags were shown, structure the response like this:
 1. One lead sentence on the overall situation.
