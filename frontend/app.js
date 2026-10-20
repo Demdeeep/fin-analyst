@@ -16,13 +16,14 @@
   const dialog = $("#settingsDialog");
   const apiUrlInput = $("#apiUrl");
   const toast = $("#toast");
+  const deployedApiUrl = "https://northstar-python-api.onrender.com";
   let toastTimer;
 
   function apiBase() {
     const saved = localStorage.getItem("northstarApiUrl");
     if (saved) return saved.replace(/\/$/, "");
     if (["localhost", "127.0.0.1"].includes(location.hostname)) return "http://127.0.0.1:8000";
-    return "";
+    return deployedApiUrl;
   }
 
   function apiToken() {
@@ -118,7 +119,7 @@
     $("#dashboardPage").classList.toggle("active-page", dashboard);
     $("#documentsPage").classList.toggle("active-page", !dashboard);
     $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.page === page));
-    $("#pageCrumb").textContent = dashboard ? "OVERVIEW" : "DOCUMENT LAB";
+    $("#pageCrumb").textContent = dashboard ? "ANALYZE FINANCIALS" : "READ A PDF REPORT";
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -468,6 +469,7 @@
   });
   $$(".nav-item").forEach((button) => button.addEventListener("click", () => switchPage(button.dataset.page)));
   $("#browseCsv").addEventListener("click", () => $("#csvInput").click());
+  $("#sidebarSample").addEventListener("click", () => $("#sampleCsv").click());
   $("#browsePdf").addEventListener("click", () => $("#pdfInput").click());
   bindDropzone($("#csvDropzone"), $("#csvInput"), setCsvFile);
   bindDropzone($("#pdfDropzone"), $("#pdfInput"), setPdfFile);
